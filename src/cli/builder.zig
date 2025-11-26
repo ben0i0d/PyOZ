@@ -214,16 +214,46 @@ pub fn developMode(allocator: std.mem.Allocator) !void {
         return err;
     };
 
-    // Try to get Python site-packages directory
-    const site_result = runCommand(allocator, &.{
-        "python3", "-c", "import site; print(site.getsitepackages()[0])",
+    // First, check if we're in a virtual environment
+    // This checks VIRTUAL_ENV env var OR if sys.prefix != sys.base_prefix
+    const venv_check = runCommand(allocator, &.{
+        "python3", "-c",
+        \\import sys, os
+        \\venv = os.environ.get('VIRTUAL_ENV')
+        \\if venv or sys.prefix != sys.base_prefix:
+        \\    # In a venv - get site-packages from sys.path
+        \\    import site
+        \\    for p in site.getsitepackages():
+        \\        if 'site-packages' in p:
+        \\            print(p)
+        \\            break
+        \\    else:
+        \\        print(site.getsitepackages()[0])
+        \\else:
+        \\    print('NO_VENV')
+        ,
     }) catch {
         // Fall back to local symlink
         try createLocalSymlink(allocator, abs_built_path, result.module_name, config.name);
         return;
     };
-    defer allocator.free(site_result);
-    const site_dir = std.mem.trim(u8, site_result, &std.ascii.whitespace);
+    defer allocator.free(venv_check);
+    const venv_result = std.mem.trim(u8, venv_check, &std.ascii.whitespace);
+
+    // If not in venv, try system site-packages but expect it might fail
+    const site_dir = if (std.mem.eql(u8, venv_result, "NO_VENV")) blk: {
+        const site_result = runCommand(allocator, &.{
+            "python3", "-c", "import site; print(site.getsitepackages()[0])",
+        }) catch {
+            try createLocalSymlink(allocator, abs_built_path, result.module_name, config.name);
+            return;
+        };
+        defer allocator.free(site_result);
+        break :blk std.mem.trim(u8, site_result, &std.ascii.whitespace);
+    } else blk: {
+        std.debug.print("  Virtual environment detected\n", .{});
+        break :blk venv_result;
+    };
 
     const target_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ site_dir, result.module_name });
     defer allocator.free(target_path);

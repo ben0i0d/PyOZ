@@ -65,6 +65,15 @@ pub fn uploadWheel(
     }
     try addFormField(allocator, &body, boundary, "requires_python", config.getPythonRequires());
 
+    // Try to read README.md for the long description
+    const readme_content: ?[]const u8 = cwd.readFileAlloc(allocator, "README.md", 1024 * 1024) catch null;
+    defer if (readme_content) |rc| allocator.free(rc);
+
+    if (readme_content) |readme| {
+        try addFormField(allocator, &body, boundary, "description", readme);
+        try addFormField(allocator, &body, boundary, "description_content_type", "text/markdown");
+    }
+
     // Add the wheel file
     try addFormFile(allocator, &body, boundary, "content", basename, wheel_data);
 

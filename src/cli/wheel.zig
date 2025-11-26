@@ -110,15 +110,31 @@ fn createWheelZip(
     defer allocator.free(wheel_file_path);
     try z.addFile(wheel_file_path, wheel_content);
 
+    // Try to read README.md for the long description
+    const readme_content: ?[]const u8 = cwd.readFileAlloc(allocator, "README.md", 1024 * 1024) catch null;
+    defer if (readme_content) |rc| allocator.free(rc);
+
     // Create METADATA file content
-    const metadata_content = try std.fmt.allocPrint(allocator,
-        \\Metadata-Version: 2.1
-        \\Name: {s}
-        \\Version: {s}
-        \\Summary: {s}
-        \\Requires-Python: {s}
-        \\
-    , .{ config.name, config.getVersion(), config.description, config.getPythonRequires() });
+    const metadata_content = if (readme_content) |readme|
+        try std.fmt.allocPrint(allocator,
+            \\Metadata-Version: 2.1
+            \\Name: {s}
+            \\Version: {s}
+            \\Summary: {s}
+            \\Requires-Python: {s}
+            \\Description-Content-Type: text/markdown
+            \\
+            \\{s}
+        , .{ config.name, config.getVersion(), config.description, config.getPythonRequires(), readme })
+    else
+        try std.fmt.allocPrint(allocator,
+            \\Metadata-Version: 2.1
+            \\Name: {s}
+            \\Version: {s}
+            \\Summary: {s}
+            \\Requires-Python: {s}
+            \\
+        , .{ config.name, config.getVersion(), config.description, config.getPythonRequires() });
     defer allocator.free(metadata_content);
 
     const metadata_file_path = try std.fmt.allocPrint(allocator, "{s}/METADATA", .{dist_info_name});
