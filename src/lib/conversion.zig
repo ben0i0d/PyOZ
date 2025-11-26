@@ -432,14 +432,15 @@ pub fn Converter(comptime class_types: []const type) type {
 
             // Check if T is Path type
             if (T == Path) {
-                if (py.PyPath_Check(obj)) {
-                    const path_str = py.PyPath_AsString(obj) orelse return error.ConversionError;
-                    return Path{ .path = path_str };
-                } else if (py.PyUnicode_Check(obj)) {
-                    // Also accept plain strings as paths
+                if (py.PyUnicode_Check(obj)) {
+                    // Plain strings - the memory is owned by the input object
                     var size: py.Py_ssize_t = 0;
                     const ptr = py.PyUnicode_AsUTF8AndSize(obj, &size) orelse return error.ConversionError;
-                    return Path{ .path = ptr[0..@intCast(size)] };
+                    return Path.init(ptr[0..@intCast(size)]);
+                } else if (py.PyPath_Check(obj)) {
+                    // pathlib.Path - need to get string with reference to keep memory alive
+                    const result = py.PyPath_AsStringWithRef(obj) orelse return error.ConversionError;
+                    return Path.fromPyObject(result.py_str, result.path);
                 }
                 return error.TypeError;
             }

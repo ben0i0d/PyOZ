@@ -64,6 +64,10 @@ pub fn wrapFunctionWithClasses(comptime zig_func: anytype, comptime class_types:
                 if (param_info == .@"struct" and @hasDecl(ParamType, "is_buffer_view") and ParamType.is_buffer_view) {
                     zig_args[i].release();
                 }
+                // Release Path types that hold Python object references
+                if (ParamType == conversion.Path) {
+                    zig_args[i].deinit();
+                }
             }
         }
 
@@ -284,6 +288,10 @@ pub fn wrapFunctionWithKeywords(comptime zig_func: anytype, comptime class_types
                 if (param_info == .@"struct" and @hasDecl(ParamType, "is_buffer_view") and ParamType.is_buffer_view) {
                     zig_args[i].release();
                 }
+                // Release Path types that hold Python object references
+                if (ParamType == conversion.Path) {
+                    zig_args[i].deinit();
+                }
             }
         }
 
@@ -427,6 +435,10 @@ pub fn wrapFunctionWithErrorMapping(comptime zig_func: anytype, comptime class_t
                 const param_info = @typeInfo(ParamType);
                 if (param_info == .@"struct" and @hasDecl(ParamType, "is_buffer_view") and ParamType.is_buffer_view) {
                     zig_args[i].release();
+                }
+                // Release Path types that hold Python object references
+                if (ParamType == conversion.Path) {
+                    zig_args[i].deinit();
                 }
             }
         }

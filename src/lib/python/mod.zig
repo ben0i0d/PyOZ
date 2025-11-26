@@ -356,6 +356,8 @@ pub const PyByteArray_Size = bytes.PyByteArray_Size;
 pub const PyPath_FromString = path.PyPath_FromString;
 pub const PyPath_Check = path.PyPath_Check;
 pub const PyPath_AsString = path.PyPath_AsString;
+pub const PyPath_AsStringWithRef = path.PyPath_AsStringWithRef;
+pub const PathStringResult = path.PathStringResult;
 
 // ============================================================================
 // Re-export embedding API

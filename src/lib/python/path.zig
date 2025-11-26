@@ -52,17 +52,46 @@ pub fn PyPath_Check(obj: *PyObject) bool {
     return c.PyObject_HasAttrString(obj, "__fspath__") != 0;
 }
 
+/// Result from PyPath_AsStringWithRef - contains both the string and the owning PyObject
+pub const PathStringResult = struct {
+    path: []const u8,
+    py_str: *PyObject,
+};
+
 /// Get string from a path-like object using os.fspath()
-pub fn PyPath_AsString(obj: *PyObject) ?[]const u8 {
+/// Returns both the string slice and the owning PyObject.
+/// The caller is responsible for calling Py_DecRef on py_str when done.
+pub fn PyPath_AsStringWithRef(obj: *PyObject) ?PathStringResult {
     // Call os.fspath() on the object to get the string representation
     const fspath_result = c.PyOS_FSPath(obj) orelse return null;
-    defer Py_DecRef(fspath_result);
+    // NOTE: We do NOT decref here - caller takes ownership
 
     // Convert to string
     if (PyUnicode_Check(fspath_result)) {
         var size: Py_ssize_t = 0;
-        const ptr = PyUnicode_AsUTF8AndSize(fspath_result, &size) orelse return null;
+        const ptr = PyUnicode_AsUTF8AndSize(fspath_result, &size) orelse {
+            Py_DecRef(fspath_result);
+            return null;
+        };
+        return PathStringResult{
+            .path = ptr[0..@intCast(size)],
+            .py_str = fspath_result,
+        };
+    }
+    Py_DecRef(fspath_result);
+    return null;
+}
+
+/// Get string from a path-like object using os.fspath()
+/// DEPRECATED: This function has a use-after-free bug when used with pathlib.Path.
+/// Use PyPath_AsStringWithRef instead which properly manages lifetime.
+pub fn PyPath_AsString(obj: *PyObject) ?[]const u8 {
+    // For plain strings, we can return directly since the string is owned by the input object
+    if (PyUnicode_Check(obj)) {
+        var size: Py_ssize_t = 0;
+        const ptr = PyUnicode_AsUTF8AndSize(obj, &size) orelse return null;
         return ptr[0..@intCast(size)];
     }
+    // For pathlib.Path, this would be unsafe - use PyPath_AsStringWithRef instead
     return null;
 }

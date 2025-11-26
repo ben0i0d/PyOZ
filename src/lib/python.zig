@@ -294,6 +294,8 @@ pub const PyByteArray_Size = mod.PyByteArray_Size;
 pub const PyPath_FromString = mod.PyPath_FromString;
 pub const PyPath_Check = mod.PyPath_Check;
 pub const PyPath_AsString = mod.PyPath_AsString;
+pub const PyPath_AsStringWithRef = mod.PyPath_AsStringWithRef;
+pub const PathStringResult = mod.PathStringResult;
 
 // Embedding API
 pub const Py_single_input = mod.Py_single_input;

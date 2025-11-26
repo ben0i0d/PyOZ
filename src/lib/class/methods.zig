@@ -5,6 +5,7 @@
 const std = @import("std");
 const py = @import("../python.zig");
 const conversion = @import("../conversion.zig");
+const Path = conversion.Path;
 
 fn getConversions() type {
     return conversion.Conversions;
@@ -220,17 +221,28 @@ pub fn MethodBuilder(comptime T: type, comptime PyWrapper: type) type {
                     const self: *PyWrapper = @ptrCast(@alignCast(self_obj orelse return null));
 
                     // Build argument tuple for the method call
-                    const extra_args = parseMethodArgs(args) catch |err| {
+                    var extra_args = parseMethodArgs(args) catch |err| {
                         const msg = @errorName(err);
                         py.PyErr_SetString(py.PyExc_TypeError(), msg.ptr);
                         return null;
                     };
+                    // Ensure Path arguments are cleaned up after function call
+                    defer releasePathArgs(&extra_args);
 
                     // Call method with self pointer and extra args
                     const result = callMethod(self.getData(), extra_args);
 
                     // Handle return - pass self_obj for potential "return self" pattern
                     return handleReturn(result, self_obj.?, self.getData());
+                }
+
+                fn releasePathArgs(extra_args: *ExtraArgsTuple()) void {
+                    inline for (1..params.len) |param_idx| {
+                        const ParamType = params[param_idx].type.?;
+                        if (ParamType == Path) {
+                            extra_args[param_idx - 1].deinit();
+                        }
+                    }
                 }
 
                 fn parseMethodArgs(py_args: ?*py.PyObject) !ExtraArgsTuple() {
@@ -342,17 +354,27 @@ pub fn MethodBuilder(comptime T: type, comptime PyWrapper: type) type {
                     _ = self_obj;
 
                     // Parse all arguments (no self to skip)
-                    const zig_args = parseArgs(args) catch |err| {
+                    var zig_args = parseArgs(args) catch |err| {
                         const msg = @errorName(err);
                         py.PyErr_SetString(py.PyExc_TypeError(), msg.ptr);
                         return null;
                     };
+                    // Ensure Path arguments are cleaned up after function call
+                    defer releasePathArgs(&zig_args);
 
                     // Call static method
                     const result = @call(.auto, method, zig_args);
 
                     // Handle return
                     return handleReturn(result);
+                }
+
+                fn releasePathArgs(zig_args: *ArgsTuple()) void {
+                    inline for (params, 0..) |param, i| {
+                        if (param.type.? == Path) {
+                            zig_args[i].deinit();
+                        }
+                    }
                 }
 
                 fn parseArgs(py_args: ?*py.PyObject) !ArgsTuple() {
@@ -427,17 +449,28 @@ pub fn MethodBuilder(comptime T: type, comptime PyWrapper: type) type {
                     _ = cls_obj;
 
                     // Parse arguments (skip the first `type` parameter)
-                    const zig_args = parseArgs(args) catch |err| {
+                    var zig_args = parseArgs(args) catch |err| {
                         const msg = @errorName(err);
                         py.PyErr_SetString(py.PyExc_TypeError(), msg.ptr);
                         return null;
                     };
+                    // Ensure Path arguments are cleaned up after function call
+                    defer releasePathArgs(&zig_args);
 
                     // Call class method with T as first argument, then the rest
                     const result = @call(.auto, method, .{T} ++ zig_args);
 
                     // Handle return
                     return handleReturn(result);
+                }
+
+                fn releasePathArgs(zig_args: *ArgsTuple()) void {
+                    inline for (1..params.len) |param_idx| {
+                        const ParamType = params[param_idx].type.?;
+                        if (ParamType == Path) {
+                            zig_args[param_idx - 1].deinit();
+                        }
+                    }
                 }
 
                 fn parseArgs(py_args: ?*py.PyObject) !ArgsTuple() {
