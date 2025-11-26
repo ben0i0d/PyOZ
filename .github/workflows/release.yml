@@ -22,6 +22,16 @@ jobs:
               with:
                   version: 0.15.2
 
+            - name: Cache Zig
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      ~/.cache/zig
+                      zig-cache
+                  key: zig-cache-${{ runner.os }}-${{ hashFiles('build.zig', 'build.zig.zon') }}
+                  restore-keys: |
+                      zig-cache-${{ runner.os }}-
+
             - name: Build all platforms
               run: zig build release
 
