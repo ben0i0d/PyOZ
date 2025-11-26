@@ -165,7 +165,10 @@ pub inline fn PyComplex_ImagAsDouble(obj: *PyObject) f64 {
 }
 
 pub inline fn PyComplex_Check(obj: *PyObject) bool {
-    return c.PyComplex_Check(obj) != 0;
+    // Reimplemented to avoid cImport issues with _PyObject_CAST_CONST
+    const obj_type = Py_TYPE(obj) orelse return false;
+    const complex_type: *PyTypeObject = @ptrCast(&c.PyComplex_Type);
+    return obj_type == complex_type or c.PyType_IsSubtype(obj_type, complex_type) != 0;
 }
 
 pub inline fn PyUnicode_FromString(s: [*:0]const u8) ?*PyObject {
@@ -211,21 +214,30 @@ pub inline fn PyUnicode_AsUTF8AndSize(obj: *PyObject, size: *Py_ssize_t) ?[*]con
 // ============================================================================
 // Type checking
 // ============================================================================
+// Note: We reimplement these instead of using C macros because the macros
+// use _PyObject_CAST_CONST which Zig's cImport can't translate in Python 3.9,
+// and Python 3.12+ has anonymous unions that cause opaque type issues.
+
+/// Helper to check if object is instance of a type (using PyType_IsSubtype)
+inline fn isTypeOrSubtype(obj: *PyObject, type_ptr: *PyTypeObject) bool {
+    const obj_type = Py_TYPE(obj) orelse return false;
+    return obj_type == type_ptr or c.PyType_IsSubtype(obj_type, type_ptr) != 0;
+}
 
 pub inline fn PyLong_Check(obj: *PyObject) bool {
-    return c.PyLong_Check(obj) != 0;
+    return isTypeOrSubtype(obj, @ptrCast(&c.PyLong_Type));
 }
 
 pub inline fn PyFloat_Check(obj: *PyObject) bool {
-    return c.PyFloat_Check(obj) != 0;
+    return isTypeOrSubtype(obj, @ptrCast(&c.PyFloat_Type));
 }
 
 pub inline fn PyUnicode_Check(obj: *PyObject) bool {
-    return c.PyUnicode_Check(obj) != 0;
+    return isTypeOrSubtype(obj, @ptrCast(&c.PyUnicode_Type));
 }
 
 pub inline fn PyBool_Check(obj: *PyObject) bool {
-    return c.PyBool_Check(obj) != 0;
+    return isTypeOrSubtype(obj, @ptrCast(&c.PyBool_Type));
 }
 
 pub inline fn PyNone_Check(obj: *PyObject) bool {
@@ -233,24 +245,37 @@ pub inline fn PyNone_Check(obj: *PyObject) bool {
 }
 
 pub inline fn PyTuple_Check(obj: *PyObject) bool {
-    return c.PyTuple_Check(obj) != 0;
+    return isTypeOrSubtype(obj, @ptrCast(&c.PyTuple_Type));
 }
 
 pub inline fn PyList_Check(obj: *PyObject) bool {
-    return c.PyList_Check(obj) != 0;
+    return isTypeOrSubtype(obj, @ptrCast(&c.PyList_Type));
 }
 
 pub inline fn PyDict_Check(obj: *PyObject) bool {
-    return c.PyDict_Check(obj) != 0;
-}
-
-pub inline fn PyObject_TypeCheck(obj: *PyObject, type_obj: *PyTypeObject) bool {
-    return c.PyObject_TypeCheck(obj, type_obj) != 0;
+    return isTypeOrSubtype(obj, @ptrCast(&c.PyDict_Type));
 }
 
 /// Get the type of a Python object
+/// Works across all Python versions by using pointer arithmetic for 3.12+
 pub inline fn Py_TYPE(obj: *PyObject) ?*PyTypeObject {
-    return obj.ob_type;
+    // In Python 3.12+, ob_type is after an anonymous union, but the offset is the same
+    // as Py_ssize_t (the ob_refcnt field), so we can access it directly
+    if (comptime @hasField(PyObject, "ob_type")) {
+        return obj.ob_type;
+    } else {
+        // Python 3.12+: access ob_type via pointer arithmetic
+        // Layout: [ob_refcnt (Py_ssize_t)] [ob_type (*PyTypeObject)]
+        const type_ptr: *?*PyTypeObject = @ptrFromInt(@intFromPtr(obj) + @sizeOf(Py_ssize_t));
+        return type_ptr.*;
+    }
+}
+
+/// Check if an object is an instance of a type (or subtype)
+/// Reimplemented to avoid cImport issues with _PyObject_CAST_CONST macro
+pub inline fn PyObject_TypeCheck(obj: *PyObject, type_obj: *PyTypeObject) bool {
+    const obj_type = Py_TYPE(obj) orelse return false;
+    return obj_type == type_obj or c.PyType_IsSubtype(obj_type, type_obj) != 0;
 }
 
 // ============================================================================
