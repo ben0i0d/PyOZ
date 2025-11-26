@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+#
+# Pre-push hook that validates version tags match src/version.zig
+# Prevents pushing tags like v0.1.0 if version.zig says 0.2.0
+#
+
+set -e
+
+# Read version from version.zig
+VERSION_FILE="src/version.zig"
+
+if [ ! -f "$VERSION_FILE" ]; then
+    echo "Error: $VERSION_FILE not found"
+    exit 1
+fi
+
+# Extract major, minor, patch from version.zig
+MAJOR=$(grep 'pub const major: u8 = ' "$VERSION_FILE" | sed 's/.*= \([0-9]*\);.*/\1/')
+MINOR=$(grep 'pub const minor: u8 = ' "$VERSION_FILE" | sed 's/.*= \([0-9]*\);.*/\1/')
+PATCH=$(grep 'pub const patch: u8 = ' "$VERSION_FILE" | sed 's/.*= \([0-9]*\);.*/\1/')
+
+# Extract pre-release if present (handles both "alpha" and null)
+PRE_RELEASE_LINE=$(grep 'pub const pre_release' "$VERSION_FILE")
+if echo "$PRE_RELEASE_LINE" | grep -q '"'; then
+    PRE_RELEASE=$(echo "$PRE_RELEASE_LINE" | sed 's/.*"\([^"]*\)".*/\1/')
+else
+    PRE_RELEASE=""
+fi
+
+# Build expected version string
+if [ -n "$PRE_RELEASE" ]; then
+    EXPECTED_VERSION="${MAJOR}.${MINOR}.${PATCH}-${PRE_RELEASE}"
+else
+    EXPECTED_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+fi
+
+# Check if we're pushing any tags
+while read local_ref local_sha remote_ref remote_sha; do
+    # Check if this is a tag push
+    case "$local_ref" in
+        refs/tags/*)
+            TAG_NAME="${local_ref#refs/tags/}"
+
+            # Strip 'v' prefix if present for comparison
+            TAG_VERSION="${TAG_NAME#v}"
+
+            if [ "$TAG_VERSION" != "$EXPECTED_VERSION" ]; then
+                echo ""
+                echo "=============================================="
+                echo "  VERSION MISMATCH - Tag push blocked!"
+                echo "=============================================="
+                echo ""
+                echo "  Tag version:      $TAG_VERSION"
+                echo "  version.zig:      $EXPECTED_VERSION"
+                echo ""
+                echo "  Please update src/version.zig to match"
+                echo "  the tag you want to create, then commit"
+                echo "  and try again."
+                echo ""
+                echo "=============================================="
+                exit 1
+            fi
+
+            echo "Version check passed: $TAG_NAME matches version.zig ($EXPECTED_VERSION)"
+            ;;
+    esac
+done
+
+exit 0
