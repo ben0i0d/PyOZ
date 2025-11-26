@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.1] - 2025-11-26
 
+### Added
+- **Cross-platform CI testing for example module** - Tests on Linux, Windows, and macOS
+  - New `example-module` job in CI workflow testing 3 platforms × 4 Python versions (3.10-3.13)
+  - Comprehensive test coverage: basic functions, classes, magic methods, `__base__` inheritance, iterator views, dict/set views, datetime types, error handling, custom exceptions, NumPy buffers, and submodules
+  - Added `examples/**` to CI trigger paths
+  - Added format checking for `examples/` directory
+
 ### Fixed
 - **Windows support** - PyOZ now works correctly on Windows
   - Replaced `python3-config` with `sysconfig` module for cross-platform Python detection
