@@ -220,7 +220,14 @@ fn generateClass(comptime name: [*:0]const u8, comptime T: type) type {
             var obj: py.PyTypeObject = std.mem.zeroes(py.PyTypeObject);
 
             // Basic setup
-            obj.ob_base.ob_base.ob_refcnt = 1;
+            // Python 3.12+ uses an anonymous union for ob_refcnt (PEP 683 immortal objects)
+            if (comptime @hasField(py.c.PyObject, "ob_refcnt")) {
+                obj.ob_base.ob_base.ob_refcnt = 1;
+            } else {
+                // Python 3.12+: ob_refcnt is inside anonymous union, access via pointer
+                const ob_ptr: *py.Py_ssize_t = @ptrCast(&obj.ob_base.ob_base);
+                ob_ptr.* = 1;
+            }
             obj.ob_base.ob_base.ob_type = null;
             obj.tp_name = name;
             // For builtin subclasses, let Python handle the size

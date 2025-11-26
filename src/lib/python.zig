@@ -39,14 +39,26 @@ pub const PyType_Spec = c.PyType_Spec;
 // Module definition
 pub const PyModuleDef = c.PyModuleDef;
 pub const PyModuleDef_Base = c.PyModuleDef_Base;
-pub const PyModuleDef_HEAD_INIT: PyModuleDef_Base = .{
-    .ob_base = .{
-        .ob_refcnt = 1,
-        .ob_type = null,
-    },
-    .m_init = null,
-    .m_index = 0,
-    .m_copy = null,
+
+// Python 3.12+ uses an anonymous union for ob_refcnt (PEP 683 immortal objects)
+// We detect this at comptime and handle both cases
+const has_direct_ob_refcnt = @hasField(c.PyObject, "ob_refcnt");
+
+pub const PyModuleDef_HEAD_INIT: PyModuleDef_Base = blk: {
+    var base: PyModuleDef_Base = std.mem.zeroes(PyModuleDef_Base);
+    base.m_init = null;
+    base.m_index = 0;
+    base.m_copy = null;
+    // Set ob_refcnt based on Python version struct layout
+    if (has_direct_ob_refcnt) {
+        base.ob_base.ob_refcnt = 1;
+    } else {
+        // Python 3.12+: ob_refcnt is inside anonymous union, access via pointer
+        const ob_ptr: *Py_ssize_t = @ptrCast(&base.ob_base);
+        ob_ptr.* = 1;
+    }
+    base.ob_base.ob_type = null;
+    break :blk base;
 };
 
 // Method flags
