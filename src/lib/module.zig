@@ -82,13 +82,28 @@ pub const Module = struct {
     /// Create a submodule and add it to this module
     /// The submodule will be accessible as parent.name
     pub fn createSubmodule(self: Self, comptime name: [*:0]const u8, comptime doc: ?[*:0]const u8, methods: ?[*]py.PyMethodDef) !Module {
-        // Create the submodule definition
-        const sub_def = comptime createModuleDef(name, doc, null);
-        var sub_def_mut = sub_def;
-        sub_def_mut.m_methods = methods;
+        // Use a static variable to ensure the PyModuleDef outlives the module.
+        // PyModule_Create stores a reference to the def, so it must remain valid
+        // for the lifetime of the Python interpreter.
+        const S = struct {
+            var sub_def: py.PyModuleDef = .{
+                .m_base = py.PyModuleDef_HEAD_INIT,
+                .m_name = name,
+                .m_doc = doc,
+                .m_size = -1,
+                .m_methods = null, // Set at runtime
+                .m_slots = null,
+                .m_traverse = null,
+                .m_clear = null,
+                .m_free = null,
+            };
+        };
+
+        // Set methods at runtime (can't be done at comptime since methods is runtime value)
+        S.sub_def.m_methods = methods;
 
         // Create the submodule
-        const submodule = py.PyModule_Create(&sub_def_mut) orelse {
+        const submodule = py.PyModule_Create(&S.sub_def) orelse {
             return PyErr.RuntimeError;
         };
 
