@@ -344,10 +344,3 @@ jobs:
 
                   print('All tests passed!')
                   "@
-
-            # Debug macOS Python 3.13 shutdown crash
-            - name: Setup tmate session on failure
-              if: failure() && runner.os == 'macOS' && matrix.python-version == '3.13'
-              uses: mxschmitt/action-tmate@v3
-              with:
-                  limit-access-to-actor: true

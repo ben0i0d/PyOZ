@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added format checking for `examples/` directory
 
 ### Fixed
+- **macOS Python 3.13 crash during interpreter shutdown** - Fixed use-after-free in submodule creation
+  - `createSubmodule` was allocating `PyModuleDef` on the stack, but Python stores a reference to it
+  - When the function returned, the stack memory became invalid
+  - During Python's GC traversal at shutdown, accessing the freed memory caused a crash
+  - Fix: Use a comptime-generated static struct to hold the `PyModuleDef`
 - **Windows support** - PyOZ now works correctly on Windows
   - Replaced `python3-config` with `sysconfig` module for cross-platform Python detection
   - Fixed library naming (`python313` on Windows vs `python3.13` on Unix)
