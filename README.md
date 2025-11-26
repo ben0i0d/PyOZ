@@ -372,16 +372,17 @@ PyOZ supports the full range of Python magic methods:
 - `__eq__`, `__ne__`, `__lt__`, `__le__`, `__gt__`, `__ge__`
 
 ### Numeric Operations
-- `__add__`, `__sub__`, `__mul__`, `__truediv__`, `__floordiv__`, `__mod__`, `__divmod__`, `__pow__`
+- `__add__`, `__sub__`, `__mul__`, `__truediv__`, `__floordiv__`, `__mod__`, `__divmod__`, `__pow__`, `__matmul__`
 - `__neg__`, `__pos__`, `__abs__`, `__invert__`
 - `__and__`, `__or__`, `__xor__`, `__lshift__`, `__rshift__`
 - `__int__`, `__float__`, `__bool__`, `__index__`, `__complex__`
-- In-place: `__iadd__`, `__isub__`, `__imul__`, etc.
-- Reflected: `__radd__`, `__rsub__`, `__rmul__`, etc.
+- In-place: `__iadd__`, `__isub__`, `__imul__`, `__imatmul__`, etc.
+- Reflected: `__radd__`, `__rsub__`, `__rmul__`, `__rmatmul__`, etc.
 
 ### Sequences & Mappings
 - `__len__`, `__getitem__`, `__setitem__`, `__delitem__`, `__contains__`
 - `__iter__`, `__next__`, `__reversed__`
+- `__missing__` (for dict subclasses)
 
 ### Context Managers
 - `__enter__`, `__exit__`
@@ -487,6 +488,194 @@ fn heavy_computation(n: i64) i64 {
     }
     return sum;
 }
+```
+
+## Keyword Arguments
+
+Use `pyoz.Args(T)` to define functions with keyword arguments and defaults:
+
+```zig
+const GreetArgs = struct {
+    name: []const u8,                    // Required positional
+    greeting: []const u8 = "Hello",      // Optional with default
+    times: i64 = 1,                      // Optional with default
+    excited: bool = false,               // Optional with default
+};
+
+fn greet(args: pyoz.Args(GreetArgs)) []const u8 {
+    const a = args.value;
+    // Use a.name, a.greeting, a.times, a.excited
+    return a.greeting;
+}
+```
+
+```python
+greet(name="World")                           # Uses defaults
+greet(name="Alice", greeting="Hi", times=3)   # Override defaults
+greet("Bob", excited=True)                    # Mix positional and keyword
+```
+
+## Class Inheritance
+
+Extend Python built-in types using `__base__`:
+
+```zig
+const Stack = struct {
+    // Inherit from Python's list
+    pub const __base__ = pyoz.bases.list;
+
+    pub fn push(self: *Stack, item: *pyoz.PyObject) void {
+        _ = pyoz.py.PyList_Append(pyoz.object(self), item);
+    }
+
+    pub fn pop_item(self: *Stack) ?*pyoz.PyObject {
+        // ... implementation using pyoz.object(self) to access base list
+    }
+};
+
+const DefaultDict = struct {
+    // Inherit from Python's dict
+    pub const __base__ = pyoz.bases.dict;
+
+    // Called when key is not found
+    pub fn __missing__(self: *DefaultDict, key: *pyoz.PyObject) ?*pyoz.PyObject {
+        // Return default value or store and return
+    }
+};
+```
+
+```python
+s = Stack()
+s.push(1)        # Custom method
+s.append(2)      # Inherited from list
+print(len(s))    # 2
+```
+
+## Class Attributes
+
+Define class-level constants using the `classattr_` prefix:
+
+```zig
+const Circle = struct {
+    radius: f64,
+
+    // Class attributes (shared by all instances)
+    pub const classattr_PI: f64 = 3.14159265358979;
+    pub const classattr_UNIT_RADIUS: f64 = 1.0;
+    pub const classattr_DEFAULT_COLOR: []const u8 = "red";
+    pub const classattr_MAX_RADIUS: i64 = 1000;
+
+    pub fn area(self: *const Circle) f64 {
+        return classattr_PI * self.radius * self.radius;
+    }
+};
+```
+
+```python
+print(Circle.PI)              # 3.14159265358979
+print(Circle.DEFAULT_COLOR)   # "red"
+c = Circle(5.0)
+print(c.PI)                   # Also accessible on instances
+```
+
+## Docstrings
+
+Add documentation to classes, methods, and fields:
+
+```zig
+const Point = struct {
+    // Class docstring
+    pub const __doc__: [*:0]const u8 = 
+        "A 2D point with x and y coordinates.";
+
+    // Field docstrings
+    pub const x__doc__: [*:0]const u8 = "The x coordinate";
+    pub const y__doc__: [*:0]const u8 = "The y coordinate";
+
+    x: f64,
+    y: f64,
+
+    // Method docstring
+    pub const magnitude__doc__: [*:0]const u8 = 
+        "Calculate distance from origin.";
+
+    pub fn magnitude(self: *const Point) f64 {
+        return @sqrt(self.x * self.x + self.y * self.y);
+    }
+
+    // Computed property docstring
+    pub const length__doc__: [*:0]const u8 = 
+        "The length (magnitude) of the point vector.";
+
+    pub fn get_length(self: *const Point) f64 {
+        return self.magnitude();
+    }
+};
+```
+
+```python
+help(Point)              # Shows class and method docs
+print(Point.__doc__)     # "A 2D point with x and y coordinates."
+help(Point.magnitude)    # Shows method doc
+```
+
+## Frozen (Immutable) Classes
+
+Create immutable classes that cannot be modified after creation:
+
+```zig
+const FrozenPoint = struct {
+    pub const __frozen__: bool = true;
+
+    x: f64,
+    y: f64,
+
+    // __hash__ is recommended for frozen classes (enables use in sets/dicts)
+    pub fn __hash__(self: *const FrozenPoint) i64 {
+        const x_bits: u64 = @bitCast(self.x);
+        const y_bits: u64 = @bitCast(self.y);
+        return @bitCast(x_bits ^ (y_bits *% 31));
+    }
+
+    pub fn __eq__(self: *const FrozenPoint, other: *const FrozenPoint) bool {
+        return self.x == other.x and self.y == other.y;
+    }
+};
+```
+
+```python
+p = FrozenPoint(3.0, 4.0)
+p.x = 5.0  # Raises AttributeError!
+
+# Can be used in sets and as dict keys
+points = {FrozenPoint(0, 0), FrozenPoint(1, 1)}
+cache = {FrozenPoint(0, 0): "origin"}
+```
+
+## Dynamic Attributes (__dict__ and weakref)
+
+Enable Python-style dynamic attribute assignment:
+
+```zig
+const Flexible = struct {
+    pub const __features__ = .{ .dict = true, .weakref = true };
+
+    value: i64,
+
+    pub fn get_value(self: *const Flexible) i64 {
+        return self.value;
+    }
+};
+```
+
+```python
+f = Flexible(42)
+f.custom_attr = "hello"    # Works! Stored in __dict__
+print(f.custom_attr)       # "hello"
+print(f.__dict__)          # {'custom_attr': 'hello'}
+
+import weakref
+ref = weakref.ref(f)       # Weak references work too
 ```
 
 ## CLI Commands
