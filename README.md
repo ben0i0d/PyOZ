@@ -9,7 +9,7 @@ PyOZ is the Zig equivalent of [PyO3](https://pyo3.rs/) for Rust. It automaticall
 - **Zero boilerplate** - Write normal Zig functions, PyOZ handles the rest
 - **Automatic type conversion** - Python ↔ Zig types converted automatically
 - **Full class support** - Structs become Python classes with all magic methods
-- **Tiny binaries** - ~500KB stripped release builds
+- **Tiny binaries** - ~8KB modules (ReleaseSmall + strip), ~500KB CLI
 - **Fast compilation** - Zig's speed, not Rust's compile times
 - **Comprehensive Python protocol support** - Iterators, sequences, mappings, buffers, descriptors, context managers, and more
 
@@ -384,7 +384,7 @@ If the tag doesn't match `version.zig`, the push will be blocked.
 | Feature | PyOZ | PyO3 |
 |---------|------|------|
 | Language | Zig | Rust |
-| Binary size | ~8KB (module) / ~500KB (CLI) | ~100KB+ |
+| Binary size | ~8KB (module) | ~100KB+ |
 | Compile time | Fast | Slow |
 | All magic methods | ✅ | ✅ |
 | Static/class methods | ✅ | ✅ |
