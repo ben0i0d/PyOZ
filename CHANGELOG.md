@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1-alpha] - 2025-11-26
+
+### Added
+- Deflate compression for wheel packages using miniz (58% smaller wheels)
+- Virtual environment detection in `pyoz develop` (auto-installs to venv site-packages)
+- README.md content included in wheel METADATA for PyPI project descriptions
+
+### Changed
+- Default ZIP compression method changed from STORE to DEFLATE
+
 ## [0.1.0-alpha] - 2025-11-26
 
 ### Added
