@@ -195,6 +195,14 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    // Add miniz C source (amalgamated single-file version)
+    cli_exe.addCSourceFile(.{
+        .file = b.path("src/miniz/miniz.c"),
+        .flags = &.{"-DMINIZ_NO_STDIO"},
+    });
+    cli_exe.addIncludePath(b.path("src/miniz"));
+    cli_exe.linkLibC();
+
     const install_cli = b.addInstallArtifact(cli_exe, .{});
 
     const cli_step = b.step("cli", "Build the PyOZ CLI tool");
@@ -249,6 +257,13 @@ pub fn build(b: *std.Build) void {
                 },
             }),
         });
+
+        // Add miniz C source for compression support
+        release_exe.addCSourceFile(.{
+            .file = b.path("src/miniz/miniz.c"),
+            .flags = &.{"-DMINIZ_NO_STDIO"},
+        });
+        release_exe.addIncludePath(b.path("src/miniz"));
 
         // Statically link libc for fully static binaries
         release_exe.linkLibC();
