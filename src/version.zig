@@ -3,10 +3,10 @@
 
 pub const major: u8 = 0;
 pub const minor: u8 = 1;
-pub const patch: u8 = 1;
+pub const patch: u8 = 2;
 
 /// Pre-release identifier (e.g., "alpha", "beta", "rc1", or null for release)
-pub const pre_release: ?[]const u8 = "alpha";
+pub const pre_release: ?[]const u8 = null;
 
 /// Build metadata (e.g., git commit hash, set at build time)
 pub const build_metadata: ?[]const u8 = null;

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2025-11-26
+
+### Added
+- CI workflow for automated testing and format checking
+- Support for Python 3.9, 3.10, 3.11, 3.12, and 3.13
+
+### Fixed
+- Python 3.12+ compatibility: handle `ob_refcnt` anonymous union (PEP 683 immortal objects)
+- Python 3.9 compatibility: reimplement type check functions to avoid cImport macro issues
+- Python 3.12+ compatibility: use extern declarations for GIL functions to avoid `PyThreadState` struct issues
+
+### Changed
+- First stable release (no longer alpha)
+- Type check functions (`PyLong_Check`, `PyFloat_Check`, etc.) reimplemented for cross-version compatibility
+- `PyThreadState` defined as opaque type for broader Python version support
+
 ## [0.1.1-alpha] - 2025-11-26
 
 ### Added
