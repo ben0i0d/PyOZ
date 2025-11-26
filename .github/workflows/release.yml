@@ -94,43 +94,51 @@ jobs:
                   } >> $GITHUB_OUTPUT
 
             - name: Create Release
-              uses: softprops/action-gh-release@v2.4.2
               env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-              with:
-                  name: PyOZ v${{ steps.version.outputs.VERSION }}
-                  body: |
-                      ## What's New in v${{ steps.version.outputs.VERSION }}
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  VERSION=${{ steps.version.outputs.VERSION }}
+                  PRERELEASE_FLAG=""
+                  if [[ "$VERSION" == *alpha* ]] || [[ "$VERSION" == *beta* ]] || [[ "$VERSION" == *rc* ]]; then
+                    PRERELEASE_FLAG="--prerelease"
+                  fi
 
-                      ${{ steps.changelog.outputs.NOTES }}
+                  cat > release_notes.md << 'RELEASE_EOF'
+                  ## What's New in v${{ steps.version.outputs.VERSION }}
 
-                      ---
+                  ${{ steps.changelog.outputs.NOTES }}
 
-                      ## Installation
+                  ---
 
-                      Download the binary for your platform and add it to your PATH:
+                  ## Installation
 
-                      | Platform | Binary |
-                      |----------|--------|
-                      | Linux x86_64 | `pyoz-x86_64-linux` |
-                      | Linux ARM64 | `pyoz-aarch64-linux` |
-                      | macOS x86_64 | `pyoz-x86_64-macos` |
-                      | macOS ARM64 (Apple Silicon) | `pyoz-aarch64-macos` |
-                      | Windows x86_64 | `pyoz-x86_64-windows.exe` |
-                      | Windows ARM64 | `pyoz-aarch64-windows.exe` |
+                  Download the binary for your platform and add it to your PATH:
 
-                      ## Source
+                  | Platform | Binary |
+                  |----------|--------|
+                  | Linux x86_64 | `pyoz-x86_64-linux` |
+                  | Linux ARM64 | `pyoz-aarch64-linux` |
+                  | macOS x86_64 | `pyoz-x86_64-macos` |
+                  | macOS ARM64 (Apple Silicon) | `pyoz-aarch64-macos` |
+                  | Windows x86_64 | `pyoz-x86_64-windows.exe` |
+                  | Windows ARM64 | `pyoz-aarch64-windows.exe` |
 
-                      Download `PyOZ-${{ steps.version.outputs.VERSION }}.tar.gz` for the source code.
+                  ## Source
 
-                      ## Quick Start
+                  Download `PyOZ-${{ steps.version.outputs.VERSION }}.tar.gz` for the source code.
 
-                      ```bash
-                      pyoz init mymodule
-                      cd mymodule
-                      pyoz build
-                      pip install dist/*.whl
-                      ```
-                  files: release/*
-                  draft: false
-                  prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+                  ## Quick Start
+
+                  ```bash
+                  pyoz init mymodule
+                  cd mymodule
+                  pyoz build
+                  pip install dist/*.whl
+                  ```
+                  RELEASE_EOF
+
+                  gh release create "v${VERSION}" \
+                    --title "PyOZ v${VERSION}" \
+                    --notes-file release_notes.md \
+                    $PRERELEASE_FLAG \
+                    release/*
