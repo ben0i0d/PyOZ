@@ -250,10 +250,10 @@ jobs:
             - name: Test example module (Windows)
               if: runner.os == 'Windows'
               run: |
-                  python -c "import sys; sys.path.insert(0, 'zig-out/lib'); import example; assert example.add(2, 3) == 5; print('Basic import works')"
+                  python -c "import sys; sys.path.insert(0, 'zig-out/bin'); import example; assert example.add(2, 3) == 5; print('Basic import works')"
                   python -c @"
                   import sys
-                  sys.path.insert(0, 'zig-out/lib')
+                  sys.path.insert(0, 'zig-out/bin')
                   import example
 
                   # Basic functions
@@ -344,3 +344,10 @@ jobs:
 
                   print('All tests passed!')
                   "@
+
+            # Debug macOS Python 3.13 shutdown crash
+            - name: Setup tmate session on failure
+              if: failure() && runner.os == 'macOS' && matrix.python-version == '3.13'
+              uses: mxschmitt/action-tmate@v3
+              with:
+                  limit-access-to-actor: true
