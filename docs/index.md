@@ -8,6 +8,9 @@ hide:
 .md-typeset h1 {
     display: none;
 }
+.grid.cards li > p:first-child {
+    text-align: center;
+}
 </style>
 
 <div align="center" markdown>

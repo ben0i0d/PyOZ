@@ -5,7 +5,135 @@ All notable changes to PyOZ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2025-11-30
+
+### Added
+- **Initial attempt at ABI3 (Stable ABI) Support** - Build Python extensions compatible with Python 3.8+
+  - Enable via `-Dabi3=true` build option or `abi3 = true` in pyproject.toml
+  - Uses Python's Limited API (`Py_LIMITED_API = 0x03080000`) for forward compatibility
+  - Single wheel works across Python 3.8, 3.9, 3.10, 3.11, 3.12, 3.13+
+  - Wheel tags correctly use `cp38-abi3-platform` format
+  - Comprehensive example module demonstrating all ABI3-compatible features
+
+- **ABI3-Compatible Features** - Most PyOZ features work in ABI3 mode:
+  - All basic types: int, float, bool, strings, bytes, complex, datetime, decimal, path
+  - Collections: list, dict, set (via Views)
+  - Classes with all magic methods: `__add__`, `__sub__`, `__mul__`, `__eq__`, `__lt__`, etc.
+  - Context managers: `__enter__`, `__exit__`
+  - Descriptors: `__get__`, `__set__`, `__delete__`
+  - Dynamic attributes: `__getattr__`, `__setattr__`, `__delattr__`
+  - Iterators: `__iter__`, `__next__`, `__reversed__`
+  - Callable objects: `__call__` with multiple arguments
+  - Hashable/frozen classes: `__hash__`, `__frozen__`
+  - Class attributes via `classattr_*` prefix
+  - Computed properties via `get_X`/`set_X` pattern
+  - `pyoz.property()` API for explicit property definitions
+  - GIL management: `releaseGIL()`, `acquireGIL()` (stable ABI functions)
+  - Enums (IntEnum and StrEnum)
+  - Custom exceptions with inheritance
+  - Error mappings
+  - In-place operators: `__iadd__`, `__ior__`, `__iand__`, etc.
+  - Reflected operators: `__radd__`, `__rmul__`, etc.
+  - Matrix operators: `__matmul__`, `__rmatmul__`, `__imatmul__`
+  - Type coercion: `__int__`, `__float__`, `__bool__`, `__complex__`, `__index__`
+  - `Iterator(T)` and `LazyIterator(T, State)` producers
+  - `BufferView(T)` for read-only numpy array access
+
+- **ABI3 Configuration in pyproject.toml**:
+  ```toml
+  [tool.pyoz]
+  abi3 = true  # Enable ABI3/Limited API mode
+  ```
+
+- **ABI3 Limitations** - Features NOT available in ABI3 mode:
+  - `BufferViewMut(T)` - Mutable buffer access requires unstable API
+  - `__base__` inheritance - Extending Python built-in types (list, dict) not supported
+  - `__dict__` / `__weakref__` support - Requires type flag access
+  - `__buffer__` producer protocol - Buffer export requires unstable structures
+  - Submodules - Module hierarchy requires `tp_dict` access
+  - GC protocol (`__traverse__`, `__clear__`) - May work but needs verification
+
+- **`Iterator(T)` producer type** - Return Python lists from Zig slices
+  - Eager evaluation: converts slice to Python list immediately
+  - Use for small, known data sets
+  ```zig
+  fn get_fibonacci() pyoz.Iterator(i64) {
+      const fibs = [_]i64{ 1, 1, 2, 3, 5, 8, 13, 21, 34, 55 };
+      return .{ .items = &fibs };
+  }
+  ```
+
+- **`LazyIterator(T, State)` producer type** - Return lazy Python iterators
+  - Generates values on-demand, memory efficient for large/infinite sequences
+  - State struct must implement `pub fn next(self: *@This()) ?T`
+  ```zig
+  const RangeState = struct {
+      current: i64, end: i64, step: i64,
+      pub fn next(self: *@This()) ?i64 {
+          if (self.current >= self.end) return null;
+          const val = self.current;
+          self.current += self.step;
+          return val;
+      }
+  };
+  fn lazy_range(start: i64, end: i64, step: i64) pyoz.LazyIterator(i64, RangeState) {
+      return .{ .state = .{ .current = start, .end = end, .step = step } };
+  }
+  ```
+
+- **`ByteArray` producer support** - Return Python `bytearray` from Zig
+  - Previously `ByteArray` was consumer-only (could only receive from Python)
+  - Now supports bidirectional conversion
+
+### Changed
+- **Type markers are now `pub const`** - All internal type markers (`_is_pyoz_*`) are now public
+  - Fixes cross-module `@hasDecl` detection which requires public declarations
+  - Affected types: `Set`, `FrozenSet`, `Dict`, `Iterator`, `LazyIterator`, `ListView`, `DictView`, `SetView`, `IteratorView`, `BufferView`, `BufferViewMut`, `Complex`, `DateTime`, `Date`, `Time`, `TimeDelta`, `Bytes`, `ByteArray`, `Path`, `Decimal`
+
+- **View types now use distinct markers** - Consumer (View) types have separate markers from producer types
+  - `_is_pyoz_set_view` vs `_is_pyoz_set`
+  - `_is_pyoz_dict_view` vs `_is_pyoz_dict`
+  - `_is_pyoz_list_view` (no producer equivalent, use slices)
+  - `_is_pyoz_iterator_view` vs `_is_pyoz_iterator`
+  - `_is_pyoz_buffer` vs `_is_pyoz_buffer_mut`
+
+- **`conversion.zig` refactored to use markers consistently**
+  - All type detection now uses `@hasDecl(T, "_is_pyoz_*")` instead of direct type comparison
+  - Improves extensibility and consistency across the codebase
+
+- **`stubs.zig` updated for new types**
+  - `Iterator(T)` generates `list[T]` type hint (eager, returns list)
+  - `LazyIterator(T, State)` generates `Iterator[T]` type hint (lazy iterator)
+  - `Dict(K, V)` producer now properly detected via `_is_pyoz_dict` marker
+  - `BufferViewMut(T)` now properly detected via `_is_pyoz_buffer_mut` marker
+  - Added `Iterator` to typing imports for lazy iterator support
+
+### Documentation
+- **Types guide updated** - Added Iterator vs LazyIterator section with usage examples
+- **View type asymmetry explained** - Documented why Views are consumer-only
+
+### Fixed
+- **Incorrect wheel ABI tag** - Wheels were incorrectly tagged as `abi3` even though PyOZ doesn't use `Py_LIMITED_API`
+  - Changed from `cp312-abi3-platform` to correct `cp312-cp312-platform` format
+  - ABI3 support will be added in a future release with proper Limited API compliance
+
+- **Misleading Linux platform tag** - Changed default from `manylinux_2_17` to `linux_x86_64`/`linux_aarch64`
+  - `manylinux` tags promise glibc compatibility that we can't guarantee without building in manylinux containers
+  - Users can now override via `linux-platform-tag` in pyproject.toml for proper manylinux builds
+
+- **Hardcoded macOS platform tag** - Now detects actual macOS version at runtime
+  - Previously hardcoded `macosx_10_9_x86_64` and `macosx_11_0_arm64`
+  - Now uses Python's `platform.mac_ver()` to detect actual OS version (e.g., `macosx_14_5_arm64`)
+
+### Added
+- **`linux-platform-tag` configuration option** in pyproject.toml
+  ```toml
+  [tool.pyoz]
+  # Override Linux platform tag for manylinux builds
+  linux-platform-tag = "manylinux_2_17_x86_64"
+  ```
+  - Allows users building in manylinux Docker containers to use proper manylinux tags
+  - Default remains `linux_x86_64` / `linux_aarch64` for honest compatibility
 
 ## [0.5.0] - 2025-11-27
 

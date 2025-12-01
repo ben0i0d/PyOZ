@@ -89,6 +89,9 @@ pub fn build(b: *std.Build) void {
     // Sanitizer option
     const sanitize = b.option(bool, "sanitize", "Enable address sanitizer") orelse false;
 
+    // ABI3 option - hardcoded to Python 3.8 minimum (see src/lib/python/types.zig)
+    const abi3 = b.option(bool, "abi3", "Enable Python Stable ABI (Limited API) mode") orelse false;
+
     // Detect Python on the system
     const python_config = detectPython(b);
 
@@ -107,6 +110,10 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // Create ABI3 options - passed to PyOZ for compile-time ABI3 detection
+    const abi3_options = b.addOptions();
+    abi3_options.addOption(bool, "abi3", abi3);
+
     // Create the PyOZ module (library)
     const pyoz_mod = b.addModule("PyOZ", .{
         .root_source_file = b.path("src/lib/root.zig"),
@@ -116,6 +123,9 @@ pub fn build(b: *std.Build) void {
             .{ .name = "version", .module = version_mod },
         },
     });
+
+    // Add build options to PyOZ module (importable as "build_options")
+    pyoz_mod.addOptions("build_options", abi3_options);
 
     // Add Python include path to the module
     if (python_config) |python| {
@@ -163,6 +173,47 @@ pub fn build(b: *std.Build) void {
 
     const example_step = b.step("example", "Build the example Python module");
     example_step.dependOn(&install_example.step);
+
+    // ========================================================================
+    // ABI3 Example Python Extension Module
+    // ========================================================================
+
+    const example_abi3_lib = b.addLibrary(.{
+        .name = "example_abi3",
+        .linkage = .dynamic,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/example_abi3.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "PyOZ", .module = pyoz_mod },
+            },
+        }),
+    });
+
+    // Enable sanitizers if requested
+    if (sanitize) {
+        example_abi3_lib.root_module.sanitize_c = .full;
+    }
+
+    // Link against Python
+    if (python_config) |python| {
+        example_abi3_lib.addIncludePath(.{ .cwd_relative = python.include_dir });
+        example_abi3_lib.root_module.addIncludePath(.{ .cwd_relative = python.include_dir });
+        if (python.lib_dir) |lib_dir| {
+            example_abi3_lib.addLibraryPath(.{ .cwd_relative = lib_dir });
+        }
+        example_abi3_lib.linkSystemLibrary(python.lib_name);
+    }
+    example_abi3_lib.linkLibC();
+
+    // Install as .so file (Unix) or .pyd file (Windows)
+    const install_example_abi3 = b.addInstallArtifact(example_abi3_lib, .{
+        .dest_sub_path = "example_abi3" ++ ext,
+    });
+
+    const example_abi3_step = b.step("example_abi3", "Build the ABI3-compatible example Python module");
+    example_abi3_step.dependOn(&install_example_abi3.step);
 
     // ========================================================================
     // Test Suite
@@ -277,6 +328,11 @@ pub fn build(b: *std.Build) void {
     test_options.addOptionPath("macho_test_lib", test_stub_paths[2]);
     tests.root_module.addOptions("test_config", test_options);
 
+    // Add build_options for ABI3 (always false for tests)
+    const test_abi3_options = b.addOptions();
+    test_abi3_options.addOption(bool, "abi3", false);
+    tests.root_module.addOptions("build_options", test_abi3_options);
+
     // Enable sanitizers if requested
     if (sanitize) {
         tests.root_module.sanitize_c = .full;
@@ -302,6 +358,46 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run the PyOZ test suite");
     test_step.dependOn(&run_tests.step);
+
+    // ========================================================================
+    // ABI3 Test Suite
+    // ========================================================================
+
+    const tests_abi3 = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/tests_abi3.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    // Add build_options for ABI3 (always false for tests - we use embedding)
+    const test_abi3_options_for_abi3_tests = b.addOptions();
+    test_abi3_options_for_abi3_tests.addOption(bool, "abi3", false);
+    tests_abi3.root_module.addOptions("build_options", test_abi3_options_for_abi3_tests);
+
+    // Enable sanitizers if requested
+    if (sanitize) {
+        tests_abi3.root_module.sanitize_c = .full;
+    }
+
+    // Link against Python for embedding
+    if (python_config) |python| {
+        tests_abi3.addIncludePath(.{ .cwd_relative = python.include_dir });
+        tests_abi3.root_module.addIncludePath(.{ .cwd_relative = python.include_dir });
+        if (python.lib_dir) |lib_dir| {
+            tests_abi3.addLibraryPath(.{ .cwd_relative = lib_dir });
+        }
+        tests_abi3.linkSystemLibrary(python.lib_name);
+    }
+    tests_abi3.linkLibC();
+
+    const run_tests_abi3 = b.addRunArtifact(tests_abi3);
+    // ABI3 tests depend on the ABI3 example module being built first
+    run_tests_abi3.step.dependOn(&install_example_abi3.step);
+
+    const test_abi3_step = b.step("test_abi3", "Run the PyOZ ABI3 test suite");
+    test_abi3_step.dependOn(&run_tests_abi3.step);
 
     // ========================================================================
     // CLI Executable (pyoz command)
