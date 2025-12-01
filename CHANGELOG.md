@@ -5,10 +5,10 @@ All notable changes to PyOZ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.7.0] - 2025-11-30
+## [0.6.0] - 2025-11-30
 
 ### Added
-- **Full ABI3 (Stable ABI) Support** - Build Python extensions compatible with Python 3.8+
+- **Initial attempt at ABI3 (Stable ABI) Support** - Build Python extensions compatible with Python 3.8+
   - Enable via `-Dabi3=true` build option or `abi3 = true` in pyproject.toml
   - Uses Python's Limited API (`Py_LIMITED_API = 0x03080000`) for forward compatibility
   - Single wheel works across Python 3.8, 3.9, 3.10, 3.11, 3.12, 3.13+
@@ -111,8 +111,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 - **Types guide updated** - Added Iterator vs LazyIterator section with usage examples
 - **View type asymmetry explained** - Documented why Views are consumer-only
-
-## [0.6.0] - 2025-11-28
 
 ### Fixed
 - **Incorrect wheel ABI tag** - Wheels were incorrectly tagged as `abi3` even though PyOZ doesn't use `Py_LIMITED_API`
