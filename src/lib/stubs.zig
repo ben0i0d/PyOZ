@@ -3,8 +3,17 @@
 //! Generates Python type stub (.pyi) files at comptime from module definitions.
 //! This provides IDE autocomplete, type checking with mypy/pyright, and visible
 //! function signatures.
+//!
+//! Private fields: Fields starting with underscore (_) are considered private
+//! and are NOT included in generated stubs (neither as annotations nor __init__ args).
 
 const std = @import("std");
+
+/// Check if a field name indicates a private field (starts with underscore)
+/// Private fields are not exposed to Python as properties or __init__ arguments
+fn isPrivateField(comptime name: []const u8) bool {
+    return name.len > 0 and name[0] == '_';
+}
 
 // =============================================================================
 // Type Mapping: Zig Types -> Python Type Strings
@@ -500,18 +509,22 @@ pub fn generateClassStub(comptime name: []const u8, comptime T: type) []const u8
             result = result ++ "    \"\"\"...\"\"\"\n";
         }
 
-        // Fields as class-level annotations
+        // Fields as class-level annotations (skip private fields starting with _)
+        var has_public_fields = false;
         for (fields) |field| {
+            if (isPrivateField(field.name)) continue;
             result = result ++ "    " ++ field.name ++ ": " ++ zigTypeToPython(field.type) ++ "\n";
+            has_public_fields = true;
         }
 
-        if (fields.len > 0) {
+        if (has_public_fields) {
             result = result ++ "\n";
         }
 
-        // __init__ method
+        // __init__ method (skip private fields starting with _)
         result = result ++ "    def __init__(self";
         for (fields) |field| {
+            if (isPrivateField(field.name)) continue;
             result = result ++ ", " ++ field.name ++ ": " ++ zigTypeToPython(field.type);
         }
         result = result ++ ") -> None: ...\n\n";
