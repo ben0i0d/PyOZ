@@ -1,6 +1,9 @@
 //! Object lifecycle functions for class generation
 //!
 //! Provides py_new, py_init, py_dealloc implementations.
+//!
+//! Private fields: Fields starting with underscore (_) are considered private
+//! and are NOT exposed to Python as __init__ arguments. They are zero-initialized.
 
 const std = @import("std");
 const py = @import("../python.zig");
@@ -9,6 +12,12 @@ const abi = @import("../abi.zig");
 
 fn getConversions() type {
     return conversion.Conversions;
+}
+
+/// Check if a field name indicates a private field (starts with underscore)
+/// Private fields are not exposed to Python as properties or __init__ arguments
+fn isPrivateField(comptime name: []const u8) bool {
+    return name.len > 0 and name[0] == '_';
 }
 
 /// Build lifecycle functions for a given type
@@ -24,6 +33,17 @@ pub fn LifecycleBuilder(
     const struct_info = @typeInfo(T).@"struct";
     const fields = struct_info.fields;
 
+    // Count public fields (excluding private fields starting with _)
+    const public_field_count = comptime blk: {
+        var count: usize = 0;
+        for (fields) |field| {
+            if (!isPrivateField(field.name)) {
+                count += 1;
+            }
+        }
+        break :blk count;
+    };
+
     return struct {
         /// __new__ - allocate object
         pub fn py_new(type_obj: ?*py.PyTypeObject, args: ?*py.PyObject, kwds: ?*py.PyObject) callconv(.c) ?*py.PyObject {
@@ -38,6 +58,8 @@ pub fn LifecycleBuilder(
         }
 
         /// __init__ - initialize object
+        /// Only public fields (not starting with _) are accepted as arguments.
+        /// Private fields are zero-initialized in py_new.
         pub fn py_init(self_obj: ?*py.PyObject, args: ?*py.PyObject, kwds: ?*py.PyObject) callconv(.c) c_int {
             _ = kwds;
             const self: *PyWrapper = @ptrCast(@alignCast(self_obj orelse return -1));
@@ -50,7 +72,7 @@ pub fn LifecycleBuilder(
                         return 0;
                     }
                 }
-                if (fields.len == 0) return 0;
+                if (public_field_count == 0) return 0;
                 py.PyErr_SetString(py.PyExc_TypeError(), "Wrong number of arguments to __init__");
                 return -1;
             };
@@ -76,7 +98,7 @@ pub fn LifecycleBuilder(
                 return 0;
             }
 
-            if (arg_count != fields.len) {
+            if (arg_count != public_field_count) {
                 py.PyErr_SetString(py.PyExc_TypeError(), "Wrong number of arguments to __init__");
                 return -1;
             }
@@ -84,6 +106,9 @@ pub fn LifecycleBuilder(
             const data = self.getData();
             comptime var i: usize = 0;
             inline for (fields) |field| {
+                // Skip private fields - they remain zero-initialized from py_new
+                if (comptime isPrivateField(field.name)) continue;
+
                 const item = py.PyTuple_GetItem(py_args, @intCast(i)) orelse {
                     py.PyErr_SetString(py.PyExc_TypeError(), "Failed to get argument");
                     return -1;

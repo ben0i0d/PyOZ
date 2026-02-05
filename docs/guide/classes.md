@@ -24,6 +24,55 @@ This automatically creates:
 - Read/write properties for `x` and `y`
 - Automatic type conversion between Zig and Python
 
+## Private Fields
+
+Fields starting with an underscore (`_`) are treated as **private** and are not exposed to Python:
+
+```zig
+const MyClass = struct {
+    // Public fields - exposed to Python
+    name: []const u8,
+    value: i64,
+    
+    // Private fields - NOT exposed to Python
+    _internal_counter: i64,
+    _cache: ?SomeType,
+};
+```
+
+Private fields:
+
+- Are **NOT** exposed as Python properties (accessing `obj._internal_counter` raises `AttributeError`)
+- Are **NOT** included in `__init__` arguments (only `name` and `value` above)
+- Are **NOT** included in generated `.pyi` type stubs
+- Are zero-initialized when the object is created
+- Can still be accessed and modified by Zig methods
+
+This is useful for:
+
+- Internal implementation details that shouldn't be part of the public API
+- Fields with types that can't be converted to Python (e.g., Zig-specific structs)
+- Caches, buffers, or state that users shouldn't manipulate directly
+
+```zig
+const Counter = struct {
+    count: i64,           // Public: users can read/write this
+    _step: i64,           // Private: internal implementation detail
+    
+    pub fn increment(self: *Counter) void {
+        self.count += self._step;  // Methods can access private fields
+    }
+};
+```
+
+Python usage:
+```python
+c = Counter(0)      # Only public field in __init__
+c.count             # OK: 0
+c.increment()       # OK: uses _step internally
+c._step             # AttributeError: private field not exposed
+```
+
 ## Constructors
 
 By default, the constructor accepts all struct fields as arguments. For custom initialization, define `__new__`:

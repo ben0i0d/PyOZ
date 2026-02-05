@@ -2714,6 +2714,107 @@ test "numpy - mismatched lengths raises ValueError" {
 }
 
 // ============================================================================
+// PRIVATE FIELDS (underscore prefix convention)
+// ============================================================================
+
+test "PrivateFieldsExample - only public fields in __init__" {
+    const python = try initTestPython();
+
+    // Should work with just 2 args (public fields: name, value)
+    // Private fields (_internal_counter, _cached_result) should NOT be in __init__
+    try python.exec("obj = example.PrivateFieldsExample('test', 42)");
+
+    // Public fields should be accessible
+    try std.testing.expect(try python.eval(bool, "obj.name == 'test'"));
+    try std.testing.expectEqual(@as(i64, 42), try python.eval(i64, "obj.value"));
+}
+
+test "PrivateFieldsExample - private fields not accessible as properties" {
+    const python = try initTestPython();
+
+    try python.exec("obj = example.PrivateFieldsExample('test', 42)");
+
+    // Private fields should NOT be accessible as properties (AttributeError)
+    try python.exec(
+        \\try:
+        \\    _ = obj._internal_counter
+        \\    private_counter_accessible = True
+        \\except AttributeError:
+        \\    private_counter_accessible = False
+    );
+    try std.testing.expect(!try python.eval(bool, "private_counter_accessible"));
+
+    try python.exec(
+        \\try:
+        \\    _ = obj._cached_result
+        \\    private_cached_accessible = True
+        \\except AttributeError:
+        \\    private_cached_accessible = False
+    );
+    try std.testing.expect(!try python.eval(bool, "private_cached_accessible"));
+}
+
+test "PrivateFieldsExample - private fields accessible via methods" {
+    const python = try initTestPython();
+
+    try python.exec("obj = example.PrivateFieldsExample('test', 42)");
+
+    // Private fields should be zero-initialized and accessible via methods
+    try std.testing.expectEqual(@as(i64, 0), try python.eval(i64, "obj.get_internal_counter()"));
+    try std.testing.expect(!try python.eval(bool, "obj.has_cached_result()"));
+
+    // Methods can modify private fields
+    try std.testing.expectEqual(@as(i64, 1), try python.eval(i64, "obj.increment_counter()"));
+    try std.testing.expectEqual(@as(i64, 2), try python.eval(i64, "obj.increment_counter()"));
+    try std.testing.expectEqual(@as(i64, 2), try python.eval(i64, "obj.get_internal_counter()"));
+
+    // compute_and_cache modifies _cached_result
+    try std.testing.expectEqual(@as(i64, 84), try python.eval(i64, "obj.compute_and_cache()")); // 42 * 2
+    try std.testing.expect(try python.eval(bool, "obj.has_cached_result()"));
+    try std.testing.expectEqual(@as(i64, 84), try python.eval(i64, "obj.get_cached_or_zero()"));
+}
+
+test "PrivateFieldsExample - wrong number of args raises TypeError" {
+    const python = try initTestPython();
+
+    // Too many args (trying to pass private fields) should fail
+    try python.exec(
+        \\try:
+        \\    obj = example.PrivateFieldsExample('test', 42, 0, None)
+        \\    too_many_args_raised = False
+        \\except TypeError:
+        \\    too_many_args_raised = True
+    );
+    try std.testing.expect(try python.eval(bool, "too_many_args_raised"));
+
+    // Too few args should also fail
+    try python.exec(
+        \\try:
+        \\    obj = example.PrivateFieldsExample('test')
+        \\    too_few_args_raised = False
+        \\except TypeError:
+        \\    too_few_args_raised = True
+    );
+    try std.testing.expect(try python.eval(bool, "too_few_args_raised"));
+}
+
+test "PrivateFieldsExample - setting private fields raises AttributeError" {
+    const python = try initTestPython();
+
+    try python.exec("obj = example.PrivateFieldsExample('test', 42)");
+
+    // Trying to set private fields should raise AttributeError
+    try python.exec(
+        \\try:
+        \\    obj._internal_counter = 100
+        \\    set_private_succeeded = True
+        \\except AttributeError:
+        \\    set_private_succeeded = False
+    );
+    try std.testing.expect(!try python.eval(bool, "set_private_succeeded"));
+}
+
+// ============================================================================
 // Symreader Tests - Binary Format Parsing
 // ============================================================================
 

@@ -2,6 +2,9 @@
 //!
 //! Generates getters and setters for struct fields and computed properties
 //! Supports both get_X/set_X naming convention and pyoz.property() declarations
+//!
+//! Private fields: Fields starting with underscore (_) are considered private
+//! and are NOT exposed to Python as properties or __init__ arguments.
 
 const std = @import("std");
 const py = @import("../python.zig");
@@ -9,6 +12,12 @@ const conversion = @import("../conversion.zig");
 
 fn getConversions() type {
     return conversion.Conversions;
+}
+
+/// Check if a field name indicates a private field (starts with underscore)
+/// Private fields are not exposed to Python as properties or __init__ arguments
+fn isPrivateField(comptime name: []const u8) bool {
+    return name.len > 0 and name[0] == '_';
 }
 
 /// Check if a declaration is a pyoz.property (checks the actual type value, not metatype)
@@ -75,9 +84,21 @@ pub fn PropertiesBuilder(comptime T: type, comptime Parent: type) type {
             return count;
         }
 
+        // Count public fields (excluding private fields starting with _)
+        fn countPublicFields() usize {
+            var count: usize = 0;
+            for (fields) |field| {
+                if (!isPrivateField(field.name)) {
+                    count += 1;
+                }
+            }
+            return count;
+        }
+
+        pub const public_fields_count = countPublicFields();
         pub const computed_props_count = countComputedProperties();
         pub const pyoz_props_count = countPyozProperties();
-        pub const total_getset_count = fields.len + computed_props_count + pyoz_props_count + 1;
+        pub const total_getset_count = public_fields_count + computed_props_count + pyoz_props_count + 1;
 
         /// Check if class is frozen
         pub fn isFrozen() bool {
@@ -106,19 +127,24 @@ pub fn PropertiesBuilder(comptime T: type, comptime Parent: type) type {
         pub var getset: [total_getset_count]py.PyGetSetDef = blk: {
             var gs: [total_getset_count]py.PyGetSetDef = undefined;
 
-            // Field-based getters/setters
-            for (fields, 0..) |field, idx| {
-                gs[idx] = .{
+            // Field-based getters/setters (skip private fields starting with _)
+            var field_idx: usize = 0;
+            for (fields) |field| {
+                // Skip private fields
+                if (isPrivateField(field.name)) continue;
+
+                gs[field_idx] = .{
                     .name = @ptrCast(field.name.ptr),
                     .get = @ptrCast(generateGetter(field.name, field.type)),
                     .set = if (isFrozen()) null else @ptrCast(generateSetter(field.name, field.type)),
                     .doc = getPropertyDoc(field.name),
                     .closure = null,
                 };
+                field_idx += 1;
             }
 
             // Computed properties (get_X/set_X style)
-            var comp_idx: usize = fields.len;
+            var comp_idx: usize = public_fields_count;
             const type_decls = @typeInfo(T).@"struct".decls;
             for (type_decls) |decl| {
                 if (decl.name.len > 4 and std.mem.startsWith(u8, decl.name, "get_")) {
@@ -177,7 +203,12 @@ pub fn PropertiesBuilder(comptime T: type, comptime Parent: type) type {
                         const self: *Parent.PyWrapper = @ptrCast(@alignCast(self_obj orelse return null));
                         const custom_getter = @field(T, "get_" ++ field_name);
                         const result = custom_getter(self.getDataConst());
-                        return getConversions().toPy(@TypeOf(result), result);
+                        const py_result = getConversions().toPy(@TypeOf(result), result);
+                        // Ensure an exception is set if conversion failed
+                        if (py_result == null and py.PyErr_Occurred() == null) {
+                            py.PyErr_SetString(py.PyExc_TypeError(), "Cannot convert field '" ++ field_name ++ "' to Python object");
+                        }
+                        return py_result;
                     }
                 }.get;
             }
@@ -186,7 +217,12 @@ pub fn PropertiesBuilder(comptime T: type, comptime Parent: type) type {
                     _ = closure;
                     const self: *Parent.PyWrapper = @ptrCast(@alignCast(self_obj orelse return null));
                     const value = @field(self.getDataConst().*, field_name);
-                    return getConversions().toPy(FieldType, value);
+                    const py_result = getConversions().toPy(FieldType, value);
+                    // Ensure an exception is set if conversion failed
+                    if (py_result == null and py.PyErr_Occurred() == null) {
+                        py.PyErr_SetString(py.PyExc_TypeError(), "Cannot convert field '" ++ field_name ++ "' to Python object");
+                    }
+                    return py_result;
                 }
             }.get;
         }

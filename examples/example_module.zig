@@ -2522,6 +2522,53 @@ const Temperature = struct {
 };
 
 // ============================================================================
+// Private fields example - demonstrates underscore prefix convention
+// ============================================================================
+
+/// Example class demonstrating private fields (underscore prefix).
+/// Private fields are NOT exposed to Python as properties or __init__ args.
+const PrivateFieldsExample = struct {
+    pub const __doc__: [*:0]const u8 = "Example class with private fields.\n\nPrivate fields (starting with _) are not exposed to Python.";
+
+    // PUBLIC fields - exposed to Python as properties and __init__ args
+    name: []const u8,
+    value: i64,
+
+    // PRIVATE fields - NOT exposed to Python (underscore prefix)
+    // These are zero-initialized and only accessible from Zig methods
+    _internal_counter: i64,
+    _cached_result: ?i64,
+
+    /// Get the current internal counter value (demonstrates accessing private fields via methods)
+    pub fn get_internal_counter(self: *const PrivateFieldsExample) i64 {
+        return self._internal_counter;
+    }
+
+    /// Increment the internal counter and return the new value
+    pub fn increment_counter(self: *PrivateFieldsExample) i64 {
+        self._internal_counter += 1;
+        return self._internal_counter;
+    }
+
+    /// Check if we have a cached result
+    pub fn has_cached_result(self: *const PrivateFieldsExample) bool {
+        return self._cached_result != null;
+    }
+
+    /// Compute and cache a result (value * 2)
+    pub fn compute_and_cache(self: *PrivateFieldsExample) i64 {
+        const result = self.value * 2;
+        self._cached_result = result;
+        return result;
+    }
+
+    /// Get cached result (returns 0 if not cached yet - use compute_and_cache to compute)
+    pub fn get_cached_or_zero(self: *const PrivateFieldsExample) i64 {
+        return self._cached_result orelse 0;
+    }
+};
+
+// ============================================================================
 // Module Definition
 // ============================================================================
 
@@ -2671,6 +2718,7 @@ const Example = pyoz.module(.{
         pyoz.class("Container", Container),
         pyoz.class("Flexible", Flexible),
         pyoz.class("Temperature", Temperature),
+        pyoz.class("PrivateFieldsExample", PrivateFieldsExample),
     },
     .exceptions = &.{
         pyoz.exception("ValidationError", .{ .doc = "Raised when validation fails", .base = .ValueError }),

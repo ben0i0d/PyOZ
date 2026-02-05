@@ -5,6 +5,27 @@ All notable changes to PyOZ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - Unreleased
+
+### Added
+- **Private Fields Convention** - Fields starting with underscore (`_`) are now treated as private:
+  - Private fields are NOT exposed to Python as properties
+  - Private fields are NOT included in `__init__` arguments
+  - Private fields are NOT included in generated `.pyi` type stubs
+  - Private fields are zero-initialized and only accessible via Zig methods
+  - Example:
+    ```zig
+    const MyClass = struct {
+        name: []const u8,      // Public - exposed to Python
+        value: i64,            // Public - exposed to Python
+        _internal: i64,        // Private - hidden from Python
+        _cache: ?SomeType,     // Private - hidden from Python
+    };
+    ```
+
+### Fixed
+- **Property getter exception handling** - When a field's type cannot be converted to Python, accessing the property now correctly raises a `TypeError` instead of returning `NULL` without setting an exception (which caused undefined behavior)
+
 ## [0.6.0] - 2025-11-30
 
 ### Added
