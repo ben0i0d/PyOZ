@@ -634,6 +634,30 @@ fn complex_mul(a: pyoz.Complex, b: pyoz.Complex) pyoz.Complex {
 // Exception catching examples
 // ============================================================================
 
+// ============================================================================
+// Callable wrapper examples
+// ============================================================================
+
+/// Apply a Python callback to two arguments and return the result
+fn apply_callback(callback: pyoz.Callable(i64), x: i64, y: i64) ?i64 {
+    return callback.call(.{ x, y });
+}
+
+/// Apply a transform callback to a single value
+fn transform_value(callback: pyoz.Callable(f64), value: f64) ?f64 {
+    return callback.call(.{value});
+}
+
+/// Call a callback with no arguments
+fn call_no_args(callback: pyoz.Callable(i64)) ?i64 {
+    return callback.callNoArgs();
+}
+
+/// Call a void callback (e.g., for side effects)
+fn call_void(callback: pyoz.Callable(void), x: i64) bool {
+    return callback.call(.{x});
+}
+
 /// Call a Python callable and catch any exception
 /// Returns the result or -1 if an exception occurred
 fn call_and_catch(callable: *pyoz.PyObject, arg: i64) i64 {
@@ -2778,6 +2802,11 @@ const Example = pyoz.module(.{
         pyoz.func("complex_magnitude", complex_magnitude, "Get magnitude of complex number"),
         pyoz.func("complex_add", complex_add, "Add two complex numbers"),
         pyoz.func("complex_mul", complex_mul, "Multiply two complex numbers"),
+        // Callable wrapper functions
+        pyoz.func("apply_callback", apply_callback, "Apply a callback to two args"),
+        pyoz.func("transform_value", transform_value, "Transform a float with a callback"),
+        pyoz.func("call_no_args", call_no_args, "Call a callback with no args"),
+        pyoz.func("call_void", call_void, "Call a void callback"),
         // Exception catching functions
         pyoz.func("call_and_catch", call_and_catch, "Call a callable and catch exceptions"),
         pyoz.func("raise_value_error", raise_value_error, "Raise a ValueError with a message"),

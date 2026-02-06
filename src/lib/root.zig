@@ -190,6 +190,13 @@ pub const Converter = conversion_mod.Converter;
 pub const Conversions = conversion_mod.Conversions;
 
 // =============================================================================
+// Callable
+// =============================================================================
+
+const callable_wrapper_mod = @import("callable.zig");
+pub const Callable = callable_wrapper_mod.Callable;
+
+// =============================================================================
 // Exceptions
 // =============================================================================
 

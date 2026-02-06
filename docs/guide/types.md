@@ -152,6 +152,41 @@ The class must be registered in the same module.
 
 For advanced cases, use `*pyoz.PyObject` to accept any Python object. You're responsible for reference counting and type checking.
 
+## Callable (Python Callbacks)
+
+Use `pyoz.Callable(ReturnType)` to accept Python functions, lambdas, or any callable object as a parameter. PyOZ handles argument conversion, the call, result conversion, and all reference counting automatically.
+
+```zig
+fn apply(callback: pyoz.Callable(i64), x: i64, y: i64) ?i64 {
+    return callback.call(.{ x, y });
+}
+```
+
+Python:
+```python
+apply(lambda x, y: x + y, 3, 4)   # 7
+apply(lambda x, y: x * y, 3, 4)   # 12
+apply(pow, 2, 10)                  # 1024
+```
+
+The return type is always optional (`?ReturnType`) — returns `null` (Python `None`) if the callback raises an exception. The exception propagates to Python.
+
+For callbacks that return nothing, use `Callable(void)`. The `.call()` method returns `bool` (true = success, false = exception):
+
+```zig
+fn run_hook(callback: pyoz.Callable(void), value: i64) bool {
+    return callback.call(.{value});
+}
+```
+
+**Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `.call(.{ args... })` | Call with arguments (Zig tuple) |
+| `.callNoArgs()` | Call with no arguments |
+| `.obj` | Access the underlying `*PyObject` |
+
 ## Type Conversion Summary
 
 | Direction | Zig | Python |
@@ -161,6 +196,7 @@ For advanced cases, use `*pyoz.PyObject` to accept any Python object. You're res
 | Both | Special types (Complex, DateTime, etc.) | Corresponding Python types |
 | Input only | View types (ListView, BufferView, etc.) | list, dict, set, ndarray |
 | Input only | `*const T`, `*T` | Class instances |
+| Input only | `pyoz.Callable(T)` | Functions, lambdas, any callable |
 | Input only | `[N]T` | list (exact size) |
 | Output only | Slices, Dict, Set | list, dict, set |
 | Output only | Anonymous struct | tuple |

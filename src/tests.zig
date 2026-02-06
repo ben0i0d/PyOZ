@@ -2920,6 +2920,76 @@ test "PrivateFieldsExample - setting private fields raises AttributeError" {
 }
 
 // ============================================================================
+// Callable Tests - Type-safe Python callback invocation
+// ============================================================================
+
+test "Callable - apply_callback with lambda" {
+    const python = try initTestPython();
+
+    try std.testing.expectEqual(@as(i64, 7), try python.eval(i64, "example.apply_callback(lambda x, y: x + y, 3, 4)"));
+}
+
+test "Callable - apply_callback with multiply" {
+    const python = try initTestPython();
+
+    try std.testing.expectEqual(@as(i64, 12), try python.eval(i64, "example.apply_callback(lambda x, y: x * y, 3, 4)"));
+}
+
+test "Callable - transform_value with float" {
+    const python = try initTestPython();
+
+    const result = try python.eval(f64, "example.transform_value(lambda x: x * 2.5, 4.0)");
+    try std.testing.expectApproxEqAbs(@as(f64, 10.0), result, 0.001);
+}
+
+test "Callable - call_no_args" {
+    const python = try initTestPython();
+
+    try std.testing.expectEqual(@as(i64, 42), try python.eval(i64, "example.call_no_args(lambda: 42)"));
+}
+
+test "Callable - call_void" {
+    const python = try initTestPython();
+
+    // call_void returns True on success (void callable)
+    try python.exec(
+        \\results = []
+        \\def side_effect(x):
+        \\    results.append(x)
+        \\
+        \\success = example.call_void(side_effect, 99)
+    );
+    try std.testing.expect(try python.eval(bool, "success"));
+    try std.testing.expectEqual(@as(i64, 99), try python.eval(i64, "results[0]"));
+}
+
+test "Callable - exception propagation" {
+    const python = try initTestPython();
+
+    // When the callback raises, the exception propagates to Python
+    try python.exec(
+        \\def bad_fn(x, y):
+        \\    raise ValueError("oops")
+        \\
+        \\try:
+        \\    result = example.apply_callback(bad_fn, 1, 2)
+        \\    exc_propagated = False
+        \\except ValueError as e:
+        \\    exc_propagated = True
+        \\    exc_msg = str(e)
+    );
+    try std.testing.expect(try python.eval(bool, "exc_propagated"));
+    try std.testing.expect(try python.eval(bool, "exc_msg == 'oops'"));
+}
+
+test "Callable - with built-in functions" {
+    const python = try initTestPython();
+
+    // Pass a built-in function as callback
+    try std.testing.expectEqual(@as(i64, 5), try python.eval(i64, "example.apply_callback(pow, 5, 1)"));
+}
+
+// ============================================================================
 // __del__ Tests - Custom cleanup on deallocation
 // ============================================================================
 

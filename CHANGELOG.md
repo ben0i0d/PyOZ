@@ -5,7 +5,7 @@ All notable changes to PyOZ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.3] - 2026-02-06
+## [0.7.0] - 2026-02-06
 
 ### Added
 - **Complete Python exception hierarchy** - Added all missing exception types from the CPython hierarchy, covering every exception from `BaseException` down through all subclasses including `NameError`, `UnboundLocalError`, `ReferenceError`, `SyntaxError`, `IndentationError`, `TabError`, `StopAsyncIteration`, and all 11 Warning types (`Warning`, `DeprecationWarning`, `UserWarning`, `RuntimeWarning`, etc.)
@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`ExcBase` enum expanded to 60+ variants** - Users can now use any standard Python exception as a base for custom exceptions via `pyoz.exception("MyError", .SyntaxError)` or any other variant
 - **`PyExc` struct covers the full hierarchy** - Programmatic access to every built-in Python exception type
 - **`__del__` hook for custom cleanup** - Structs can now define `pub fn __del__(self: *Self) void` which PyOZ calls during `tp_dealloc` before freeing the Python object. This allows releasing C memory, closing file handles, invalidating resources, etc. Works in both normal and ABI3 modes with zero runtime cost for types that don't define it.
+- **`Callable(ReturnType)` wrapper for Python callbacks** - Type-safe wrapper for accepting and invoking Python callables from Zig. Handles automatic argument marshalling (Zig→Python conversion), result conversion (Python→Zig), full refcounting, and exception propagation. Supports any number of arguments via `.call(.{args})`, a `.callNoArgs()` shortcut, and `Callable(void)` for callbacks with no return value. Works in ABI3 mode.
 
 ### Changed
 - **Raise functions now take `comptime message`** - All raise functions accept `comptime message: [*:0]const u8` instead of runtime strings, which enables the `@TypeOf(null)` return type
