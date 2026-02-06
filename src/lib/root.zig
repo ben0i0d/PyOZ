@@ -276,14 +276,14 @@ pub fn class(comptime name: [*:0]const u8, comptime T: type) ClassDef {
 // Module builder
 // =============================================================================
 
-/// Extract Zig types from class definitions
-fn extractClassTypes(comptime classes: anytype) []const type {
+/// Extract class info (name + type) from class definitions
+fn extractClassInfo(comptime classes: anytype) []const class_mod.ClassInfo {
     comptime {
-        var types: [classes.len]type = undefined;
+        var infos: [classes.len]class_mod.ClassInfo = undefined;
         for (classes, 0..) |cls, i| {
-            types[i] = cls.zig_type;
+            infos[i] = .{ .name = cls.name, .zig_type = cls.zig_type };
         }
-        const final = types;
+        const final = infos;
         return &final;
     }
 }
@@ -436,7 +436,7 @@ pub fn property(comptime config: anytype) type {
 pub fn module(comptime config: anytype) type {
     const classes = config.classes;
     const funcs = config.funcs;
-    const class_types = extractClassTypes(classes);
+    const class_infos = extractClassInfo(classes);
     const exceptions = if (@hasField(@TypeOf(config), "exceptions")) config.exceptions else &[_]ExceptionDef{};
     const num_exceptions = exceptions.len;
     const error_mappings = if (@hasField(@TypeOf(config), "error_mappings")) config.error_mappings else &[_]ErrorMapping{};
@@ -465,14 +465,14 @@ pub fn module(comptime config: anytype) type {
                 if (is_named_kwargs) {
                     m[i] = .{
                         .ml_name = f.name,
-                        .ml_meth = @ptrCast(wrapFunctionWithNamedKeywords(f.func, class_types)),
+                        .ml_meth = @ptrCast(wrapFunctionWithNamedKeywords(f.func, class_infos)),
                         .ml_flags = py.METH_VARARGS | py.METH_KEYWORDS,
                         .ml_doc = f.doc,
                     };
                 } else if (is_kwargs) {
                     m[i] = .{
                         .ml_name = f.name,
-                        .ml_meth = @ptrCast(wrapFunctionWithKeywords(f.func, class_types)),
+                        .ml_meth = @ptrCast(wrapFunctionWithKeywords(f.func, class_infos)),
                         .ml_flags = py.METH_VARARGS | py.METH_KEYWORDS,
                         .ml_doc = f.doc,
                     };
@@ -481,14 +481,14 @@ pub fn module(comptime config: anytype) type {
                     if (error_mappings.len > 0) {
                         m[i] = .{
                             .ml_name = f.name,
-                            .ml_meth = wrapFunctionWithErrorMapping(f.func, class_types, error_mappings),
+                            .ml_meth = wrapFunctionWithErrorMapping(f.func, class_infos, error_mappings),
                             .ml_flags = py.METH_VARARGS,
                             .ml_doc = f.doc,
                         };
                     } else {
                         m[i] = .{
                             .ml_name = f.name,
-                            .ml_meth = wrapFunctionWithClasses(f.func, class_types),
+                            .ml_meth = wrapFunctionWithClasses(f.func, class_infos),
                             .ml_flags = py.METH_VARARGS,
                             .ml_doc = f.doc,
                         };
@@ -559,11 +559,31 @@ pub fn module(comptime config: anytype) type {
 
             // Add classes to the module
             inline for (classes) |cls| {
-                const Wrapper = class_mod.getWrapper(cls.zig_type);
+                const Wrapper = class_mod.getWrapperWithName(cls.name, cls.zig_type);
 
-                // Initialize type with custom name (ABI3: PyType_FromSpec, non-ABI3: PyType_Ready)
-                // Use initTypeWithName to ensure the Python-visible name matches cls.name
-                const type_obj = Wrapper.initTypeWithName(cls.name) orelse {
+                // Build qualified name "module.ClassName" so Python derives __module__
+                const qualified_name: [*:0]const u8 = comptime blk: {
+                    @setEvalBranchQuota(10000);
+                    const mod_name: [*:0]const u8 = config.name;
+                    const cls_str: [*:0]const u8 = cls.name;
+                    // Count lengths
+                    var mod_len: usize = 0;
+                    while (mod_name[mod_len] != 0) mod_len += 1;
+                    var cls_len: usize = 0;
+                    while (cls_str[cls_len] != 0) cls_len += 1;
+                    // Build "module.ClassName\0"
+                    const total = mod_len + 1 + cls_len;
+                    var buf: [total:0]u8 = undefined;
+                    for (0..mod_len) |i| buf[i] = mod_name[i];
+                    buf[mod_len] = '.';
+                    for (0..cls_len) |i| buf[mod_len + 1 + i] = cls_str[i];
+                    buf[total] = 0;
+                    const final = buf;
+                    break :blk @ptrCast(&final);
+                };
+
+                // Initialize type with qualified name for proper __module__
+                const type_obj = Wrapper.initTypeWithName(qualified_name) orelse {
                     py.Py_DecRef(mod);
                     return null;
                 };
@@ -728,7 +748,7 @@ pub fn module(comptime config: anytype) type {
         }
 
         // Expose class types for external use
-        pub const registered_classes = class_types;
+        pub const registered_classes = class_infos;
 
         /// Generate Python type stub (.pyi) content for this module
         /// Returns the complete stub file content as a comptime string
@@ -824,7 +844,7 @@ pub fn methodDefSentinel() PyMethodDef {
 
 /// Wrap a Zig function for use in submodule method arrays
 pub fn wrapFunc(comptime zig_func: anytype) py.PyCFunction {
-    return wrapFunctionWithErrorMapping(zig_func, &[_]type{}, &[_]ErrorMapping{
+    return wrapFunctionWithErrorMapping(zig_func, &[_]class_mod.ClassInfo{}, &[_]ErrorMapping{
         mapError("NegativeValue", .ValueError),
         mapErrorMsg("ValueTooLarge", .ValueError, "Value exceeds maximum"),
         mapError("IndexOutOfBounds", .IndexError),

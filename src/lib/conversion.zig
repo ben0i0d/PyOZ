@@ -46,7 +46,7 @@ const iterator_types = @import("collections/iterator.zig");
 const LazyIteratorWrapper = iterator_types.LazyIteratorWrapper;
 
 /// Type conversion implementations - creates a converter aware of registered classes
-pub fn Converter(comptime class_types: []const type) type {
+pub fn Converter(comptime class_infos: []const class_mod.ClassInfo) type {
     return struct {
         /// Convert Zig value to Python object
         pub fn toPy(comptime T: type, value: T) ?*PyObject {
@@ -110,8 +110,8 @@ pub fn Converter(comptime class_types: []const type) type {
                         return list;
                     }
                     // Check if it's a pointer to a registered class - wrap it
-                    inline for (class_types) |ClassType| {
-                        if (ptr.child == ClassType) {
+                    inline for (class_infos) |cls_info| {
+                        if (ptr.child == cls_info.zig_type) {
                             // TODO: Create a new Python object wrapping this pointer
                             // For now, return null - we'd need to copy the data
                             return null;
@@ -294,9 +294,9 @@ pub fn Converter(comptime class_types: []const type) type {
                     }
 
                     // Check if this is a registered class type - create a new Python object
-                    inline for (class_types) |ClassType| {
-                        if (T == ClassType) {
-                            const Wrapper = class_mod.getWrapper(ClassType);
+                    inline for (class_infos) |cls_info| {
+                        if (T == cls_info.zig_type) {
+                            const Wrapper = class_mod.getWrapperWithName(cls_info.name, cls_info.zig_type);
                             // Allocate a new Python object - use getType() which works in both ABI3 and non-ABI3 modes
                             const py_obj = py.PyObject_New(Wrapper.PyWrapper, Wrapper.getType()) orelse return null;
                             // Copy the data
@@ -326,9 +326,9 @@ pub fn Converter(comptime class_types: []const type) type {
                 }
 
                 // Check each registered class type
-                inline for (class_types) |ClassType| {
-                    if (Child == ClassType) {
-                        const Wrapper = class_mod.getWrapper(ClassType);
+                inline for (class_infos) |cls_info| {
+                    if (Child == cls_info.zig_type) {
+                        const Wrapper = class_mod.getWrapperWithName(cls_info.name, cls_info.zig_type);
                         if (ptr_info.is_const) {
                             return Wrapper.unwrapConst(obj) orelse return error.TypeError;
                         } else {
@@ -816,4 +816,4 @@ fn convertBufferAbi3(comptime T: type, comptime ElementType: type, obj: *PyObjec
 }
 
 /// Basic conversions (no class awareness) - for backwards compatibility
-pub const Conversions = Converter(&[_]type{});
+pub const Conversions = Converter(&[_]class_mod.ClassInfo{});

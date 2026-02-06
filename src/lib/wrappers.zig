@@ -8,13 +8,15 @@ const py = @import("python.zig");
 const PyObject = py.PyObject;
 const conversion = @import("conversion.zig");
 const Converter = conversion.Converter;
+const class_mod = @import("class.zig");
+const ClassInfo = class_mod.ClassInfo;
 const errors_mod = @import("errors.zig");
 const ErrorMapping = errors_mod.ErrorMapping;
 const setErrorFromMapping = errors_mod.setErrorFromMapping;
 
 /// Generate a Python-callable wrapper for a Zig function with class type awareness
-pub fn wrapFunctionWithClasses(comptime zig_func: anytype, comptime class_types: []const type) py.PyCFunction {
-    const Conv = Converter(class_types);
+pub fn wrapFunctionWithClasses(comptime zig_func: anytype, comptime class_infos: []const ClassInfo) py.PyCFunction {
+    const Conv = Converter(class_infos);
     const Fn = @TypeOf(zig_func);
     const fn_info = @typeInfo(Fn).@"fn";
     const params = fn_info.params;
@@ -95,7 +97,7 @@ pub fn wrapFunctionWithClasses(comptime zig_func: anytype, comptime class_types:
 
 /// Generate a Python-callable wrapper for a Zig function (no class awareness)
 pub fn wrapFunction(comptime zig_func: anytype) py.PyCFunction {
-    return wrapFunctionWithClasses(zig_func, &[_]type{});
+    return wrapFunctionWithClasses(zig_func, &[_]ClassInfo{});
 }
 
 /// Helper type for argument tuple
@@ -112,8 +114,8 @@ pub const PyCFunctionWithKeywords = *const fn (?*PyObject, ?*PyObject, ?*PyObjec
 
 /// Generate a Python-callable wrapper for a Zig function with named keyword arguments
 /// The function should take Args(SomeStruct) as its parameter
-pub fn wrapFunctionWithNamedKeywords(comptime zig_func: anytype, comptime class_types: []const type) PyCFunctionWithKeywords {
-    const Conv = Converter(class_types);
+pub fn wrapFunctionWithNamedKeywords(comptime zig_func: anytype, comptime class_infos: []const ClassInfo) PyCFunctionWithKeywords {
+    const Conv = Converter(class_infos);
     const Fn = @TypeOf(zig_func);
     const fn_info = @typeInfo(Fn).@"fn";
     const params = fn_info.params;
@@ -233,8 +235,8 @@ pub fn wrapFunctionWithNamedKeywords(comptime zig_func: anytype, comptime class_
 
 /// Generate a Python-callable wrapper for a Zig function with keyword argument support
 /// Optional parameters (?T) are treated as optional keyword arguments
-pub fn wrapFunctionWithKeywords(comptime zig_func: anytype, comptime class_types: []const type) PyCFunctionWithKeywords {
-    const Conv = Converter(class_types);
+pub fn wrapFunctionWithKeywords(comptime zig_func: anytype, comptime class_infos: []const ClassInfo) PyCFunctionWithKeywords {
+    const Conv = Converter(class_infos);
     const Fn = @TypeOf(zig_func);
     const fn_info = @typeInfo(Fn).@"fn";
     const params = fn_info.params;
@@ -385,8 +387,8 @@ pub fn wrapFunctionWithKeywords(comptime zig_func: anytype, comptime class_types
 }
 
 /// Generate a wrapper with custom error mapping
-pub fn wrapFunctionWithErrorMapping(comptime zig_func: anytype, comptime class_types: []const type, comptime error_mappings: []const ErrorMapping) py.PyCFunction {
-    const Conv = Converter(class_types);
+pub fn wrapFunctionWithErrorMapping(comptime zig_func: anytype, comptime class_infos: []const ClassInfo, comptime error_mappings: []const ErrorMapping) py.PyCFunction {
+    const Conv = Converter(class_infos);
     const Fn = @TypeOf(zig_func);
     const fn_info = @typeInfo(Fn).@"fn";
     const params = fn_info.params;

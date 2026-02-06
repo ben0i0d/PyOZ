@@ -11,7 +11,7 @@ fn getConversions() type {
 }
 
 /// Build attribute access protocol for a given type
-pub fn AttributeProtocol(comptime T: type, comptime Parent: type, comptime name: [*:0]const u8) type {
+pub fn AttributeProtocol(comptime name: [*:0]const u8, comptime T: type, comptime Parent: type) type {
     return struct {
         /// Check if this class is frozen
         pub fn isFrozen() bool {

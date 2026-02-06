@@ -7,12 +7,17 @@ const py = @import("../python.zig");
 const conversion = @import("../conversion.zig");
 const slots = py.slots;
 
-fn getConversions() type {
-    return conversion.Conversions;
+const class_mod = @import("mod.zig");
+const ClassInfo = class_mod.ClassInfo;
+
+fn getSelfAwareConverter(comptime name: [*:0]const u8, comptime T: type) type {
+    return conversion.Converter(&[_]ClassInfo{.{ .name = name, .zig_type = T }});
 }
 
 /// Build sequence protocol for a given type
-pub fn SequenceProtocol(comptime T: type, comptime Parent: type) type {
+pub fn SequenceProtocol(comptime name: [*:0]const u8, comptime T: type, comptime Parent: type) type {
+    const Conv = getSelfAwareConverter(name, T);
+
     return struct {
         pub fn hasSequenceMethods() bool {
             return @hasDecl(T, "__len__") or @hasDecl(T, "__getitem__") or
@@ -76,10 +81,10 @@ pub fn SequenceProtocol(comptime T: type, comptime Parent: type) type {
                     py.PyErr_SetString(py.PyExc_IndexError(), msg.ptr);
                     return null;
                 };
-                return getConversions().toPy(@TypeOf(result), result);
+                return Conv.toPy(@TypeOf(result), result);
             } else {
                 const result = T.__getitem__(self.getDataConst(), idx);
-                return getConversions().toPy(GetItemRetType, result);
+                return Conv.toPy(GetItemRetType, result);
             }
         }
 
@@ -91,7 +96,7 @@ pub fn SequenceProtocol(comptime T: type, comptime Parent: type) type {
             const fn_info = @typeInfo(ContainsFn).@"fn";
             const ElemType = fn_info.params[1].type.?;
 
-            const elem = getConversions().fromPy(ElemType, value) catch {
+            const elem = Conv.fromPy(ElemType, value) catch {
                 return 0;
             };
 
@@ -116,7 +121,7 @@ pub fn SequenceProtocol(comptime T: type, comptime Parent: type) type {
                 // Wrap negative index for unsigned types
                 const idx = wrapIndexConst(IndexType, index, self) orelse return -1;
 
-                const zig_value = getConversions().fromPy(ValueType, value) catch {
+                const zig_value = Conv.fromPy(ValueType, value) catch {
                     py.PyErr_SetString(py.PyExc_TypeError(), "invalid value type for __setitem__");
                     return -1;
                 };

@@ -108,6 +108,16 @@ pub inline fn PyUnicode_AsUTF8WithCleanup(obj: *PyObject) ?Utf8Result {
 }
 
 // ============================================================================
+// String operations
+// ============================================================================
+
+/// Concatenate two unicode strings, returning a new string.
+/// Caller owns the returned reference.
+pub inline fn PyUnicode_Concat(left: *PyObject, right: *PyObject) ?*PyObject {
+    return c.PyUnicode_Concat(left, right);
+}
+
+// ============================================================================
 // String formatting
 // ============================================================================
 

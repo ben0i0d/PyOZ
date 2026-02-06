@@ -5,6 +5,24 @@ All notable changes to PyOZ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-02-06
+
+### Added
+- **Auto-generated `__repr__` for classes without custom `__repr__`** - Classes that don't define a `__repr__` method now automatically get a repr in the form `ClassName(field1=val1, field2=val2)`. Private fields (starting with `_`) are excluded from the output.
+- **Auto-generated `tp_doc` for classes without `__doc__`** - Classes that don't declare a `__doc__` string now get an auto-generated docstring showing the constructor signature and field types, e.g. `SimplePoint(x, y)\n\nAttributes:\n    x: float\n    y: float`. This makes `help(MyClass)` useful out of the box.
+- **`ClassInfo` struct for the conversion system** - Introduced `ClassInfo` (pairing a custom name with a Zig type) to thread custom class names through the entire comptime pipeline, replacing bare `type` arrays.
+- **`getWrapperWithName(name, T)`** - New comptime function that generates a class wrapper using the provided custom name, ensuring a single consistent type instantiation across registration and conversion.
+
+### Changed
+- **All protocol signatures normalized to `(name, T, Parent)`** - Every protocol that accepts a class name now takes it as the first parameter for consistency: `NumberProtocol`, `SequenceProtocol`, `MappingProtocol`, `IteratorProtocol`, `CallableProtocol`, `DescriptorProtocol`, `ReprProtocol`, `AttributeProtocol`, and `MethodBuilder`.
+- **All protocols now use class-aware converters** - `SequenceProtocol`, `MappingProtocol`, and `DescriptorProtocol` now use `getSelfAwareConverter(name, T)` instead of the generic `Conversions`, matching the pattern already used by `NumberProtocol`, `CallableProtocol`, `IteratorProtocol`, and `MethodBuilder`.
+- **Conversion system uses `ClassInfo` instead of bare types** - `Converter`, all wrapper functions in `wrappers.zig`, and `extractClassInfo` in `root.zig` now work with `[]const ClassInfo` to ensure custom class names are used everywhere.
+
+### Fixed
+- **`help(module)` now lists all registered classes** - Classes were missing from `help(module)` because their `__module__` attribute was `builtins` instead of the module name. Fixed by setting `tp_name` to the qualified form `"module.ClassName"`, which Python uses to derive `__module__` automatically.
+- **Custom class names now propagate through the entire system** - Previously, `getWrapper(T)` used `@typeName(T)` which produced internal Zig paths like `os.linux.kernel_timespec`. When using external types with `py.class("Timespec", std.os.linux.kernel_timespec)`, the custom name now correctly appears in `__repr__`, `tp_doc`, error messages, and `help()` output.
+- **Fixed dual comptime instantiation bug** - Registration and conversion previously created separate type instantiations (one with the custom name, one with `@typeName`), causing objects returned from functions to lack properties and methods. Both paths now use the same `getWrapperWithName` instantiation.
+
 ## [0.6.1] - 2026-02-05
 
 ### Added
