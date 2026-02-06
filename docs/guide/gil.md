@@ -35,9 +35,40 @@ fn heavy_compute(n: i64) i64 {
 }
 ```
 
+## Ergonomic GIL Release
+
+For the common pattern of "release GIL, call a function, reacquire", use `allowThreads`:
+
+```zig
+fn process(data: pyoz.BufferView(f64)) f64 {
+    return pyoz.allowThreads(heavyCompute, .{data.data});
+}
+
+fn heavyCompute(slice: []const f64) f64 {
+    var sum: f64 = 0;
+    for (slice) |v| sum += @sqrt(v);
+    return sum;
+}
+```
+
+`allowThreads` handles release/reacquire automatically. For functions that return errors, use `allowThreadsTry` which uses `defer` for safe GIL restoration:
+
+```zig
+fn tryProcess(data: []const u8) !usize {
+    return pyoz.allowThreadsTry(parseData, .{data});
+}
+```
+
 ## API Reference
 
-### From Python Threads (most common)
+### Ergonomic (recommended)
+
+| Function | Description |
+|----------|-------------|
+| `pyoz.allowThreads(func, args)` | Call `func(args...)` without the GIL, return its result |
+| `pyoz.allowThreadsTry(func, args)` | Same, but uses `defer` for error-safe GIL restoration |
+
+### Manual (from Python threads)
 
 | Function | Description |
 |----------|-------------|
@@ -50,6 +81,31 @@ fn heavy_compute(n: i64) i64 {
 |----------|-------------|
 | `pyoz.acquireGIL()` | Acquire GIL from a Zig thread, returns `GILState` |
 | `GILState.release()` | Release GIL when done |
+
+## Signal Handling (Ctrl+C Support)
+
+Long-running Zig code blocks Python's signal handling. Without intervention, users can't Ctrl+C to interrupt a stuck computation. Use `checkSignals()` to cooperatively check for pending signals:
+
+```zig
+fn compute(n: i64) !i64 {
+    var sum: i64 = 0;
+    var i: i64 = 0;
+    while (i < n) : (i += 1) {
+        if (@mod(i, 100000) == 0) try pyoz.checkSignals();
+        sum +%= i;
+    }
+    return sum;
+}
+```
+
+`checkSignals()` returns normally if no signal is pending. If a signal was received (e.g., SIGINT from Ctrl+C), it returns `error.Interrupted` and the corresponding Python exception (`KeyboardInterrupt`) is already set — it propagates automatically through the `!T` error union return.
+
+**Frequency:** Call it every ~100K iterations or every few milliseconds. Too frequent adds overhead; too rare makes Ctrl+C feel unresponsive.
+
+| Function | Description |
+|----------|-------------|
+| `pyoz.checkSignals()` | Returns `!void` — error if signal pending |
+| `pyoz.SignalError` | The error set: `error{Interrupted}` |
 
 ## Best Practices
 

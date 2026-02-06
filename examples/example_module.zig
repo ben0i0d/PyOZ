@@ -98,6 +98,17 @@ fn compute_sum_with_gil(n: i64) i64 {
     return sum;
 }
 
+/// Interruptible sum — supports Ctrl+C during long computation
+fn interruptible_sum(n: i64) !i64 {
+    var sum: i64 = 0;
+    var i: i64 = 0;
+    while (i < n) : (i += 1) {
+        if (@mod(i, 100000) == 0) try pyoz.checkSignals();
+        sum +%= i;
+    }
+    return sum;
+}
+
 // ============================================================================
 // Dict support examples
 // ============================================================================
@@ -634,6 +645,30 @@ fn complex_mul(a: pyoz.Complex, b: pyoz.Complex) pyoz.Complex {
 // Exception catching examples
 // ============================================================================
 
+// ============================================================================
+// Callable wrapper examples
+// ============================================================================
+
+/// Apply a Python callback to two arguments and return the result
+fn apply_callback(callback: pyoz.Callable(i64), x: i64, y: i64) ?i64 {
+    return callback.call(.{ x, y });
+}
+
+/// Apply a transform callback to a single value
+fn transform_value(callback: pyoz.Callable(f64), value: f64) ?f64 {
+    return callback.call(.{value});
+}
+
+/// Call a callback with no arguments
+fn call_no_args(callback: pyoz.Callable(i64)) ?i64 {
+    return callback.callNoArgs();
+}
+
+/// Call a void callback (e.g., for side effects)
+fn call_void(callback: pyoz.Callable(void), x: i64) bool {
+    return callback.call(.{x});
+}
+
 /// Call a Python callable and catch any exception
 /// Returns the result or -1 if an exception occurred
 fn call_and_catch(callable: *pyoz.PyObject, arg: i64) i64 {
@@ -678,12 +713,12 @@ fn call_and_catch(callable: *pyoz.PyObject, arg: i64) i64 {
 
 /// Demonstrate raising exceptions from Zig
 fn raise_value_error(msg: []const u8) ?i64 {
-    // Create a null-terminated string for the error message
+    // For runtime messages, use PyErr_SetString directly
     var buf: [256]u8 = undefined;
     const len = @min(msg.len, 255);
     @memcpy(buf[0..len], msg[0..len]);
     buf[len] = 0;
-    pyoz.raiseValueError(@ptrCast(&buf));
+    pyoz.py.PyErr_SetString(pyoz.py.PyExc_ValueError(), @ptrCast(&buf));
     return null;
 }
 
@@ -2666,6 +2701,46 @@ const PrivateFieldsExample = struct {
 const SimplePoint = struct {
     x: f64,
     y: f64,
+
+    pub const __class_getitem__ = true;
+    pub const __freelist__: usize = 8;
+};
+
+// ============================================================================
+// Resource class - demonstrates __del__ for custom cleanup
+// Simulates a C resource (file descriptor, allocated buffer, etc.)
+const Resource = struct {
+    handle: i64,
+    _freed: bool,
+
+    pub fn __new__(handle: i64) Resource {
+        return .{ .handle = handle, ._freed = false };
+    }
+
+    pub fn __del__(self: *Resource) void {
+        self._freed = true;
+        self.handle = -1;
+    }
+
+    pub fn is_valid(self: *const Resource) bool {
+        return self.handle >= 0 and !self._freed;
+    }
+
+    pub fn get_handle(self: *const Resource) i64 {
+        return self.handle;
+    }
+};
+
+// ============================================================================
+// FlexPoint - demonstrates optional constructor arguments
+const FlexPoint = struct {
+    x: f64,
+    y: f64,
+    z: f64,
+
+    pub fn __new__(x: f64, y: ?f64, z: ?f64) FlexPoint {
+        return .{ .x = x, .y = y orelse 0.0, .z = z orelse 0.0 };
+    }
 };
 
 // Module Definition
@@ -2684,6 +2759,7 @@ const Example = pyoz.module(.{
         pyoz.kwfunc("power", power, "Calculate base^exponent (default exponent=2)"),
         pyoz.func("compute_sum_no_gil", compute_sum_no_gil, "Sum of squares (releases GIL)"),
         pyoz.func("compute_sum_with_gil", compute_sum_with_gil, "Sum of squares (keeps GIL)"),
+        pyoz.func("interruptible_sum", interruptible_sum, "Sum 0..n with Ctrl+C support"),
         pyoz.func("sum_dict_values", sum_dict_values, "Sum integer values in a dict"),
         pyoz.func("get_dict_value", get_dict_value, "Get value from dict by key"),
         pyoz.func("make_dict", make_dict, "Return a dict with one/two/three"),
@@ -2753,6 +2829,11 @@ const Example = pyoz.module(.{
         pyoz.func("complex_magnitude", complex_magnitude, "Get magnitude of complex number"),
         pyoz.func("complex_add", complex_add, "Add two complex numbers"),
         pyoz.func("complex_mul", complex_mul, "Multiply two complex numbers"),
+        // Callable wrapper functions
+        pyoz.func("apply_callback", apply_callback, "Apply a callback to two args"),
+        pyoz.func("transform_value", transform_value, "Transform a float with a callback"),
+        pyoz.func("call_no_args", call_no_args, "Call a callback with no args"),
+        pyoz.func("call_void", call_void, "Call a void callback"),
         // Exception catching functions
         pyoz.func("call_and_catch", call_and_catch, "Call a callable and catch exceptions"),
         pyoz.func("raise_value_error", raise_value_error, "Raise a ValueError with a message"),
@@ -2824,6 +2905,8 @@ const Example = pyoz.module(.{
         pyoz.class("Temperature", Temperature),
         pyoz.class("PrivateFieldsExample", PrivateFieldsExample),
         pyoz.class("SimplePoint", SimplePoint),
+        pyoz.class("Resource", Resource),
+        pyoz.class("FlexPoint", FlexPoint),
     },
     .exceptions = &.{
         pyoz.exception("ValidationError", .{ .doc = "Raised when validation fails", .base = .ValueError }),

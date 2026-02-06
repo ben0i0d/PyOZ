@@ -172,6 +172,16 @@ pub const GILGuard = gil_mod.GILGuard;
 pub const GILState = gil_mod.GILState;
 pub const releaseGIL = gil_mod.releaseGIL;
 pub const acquireGIL = gil_mod.acquireGIL;
+pub const allowThreads = gil_mod.allowThreads;
+pub const allowThreadsTry = gil_mod.allowThreadsTry;
+
+// =============================================================================
+// Signal Handling
+// =============================================================================
+
+const signal_mod = @import("signal.zig");
+pub const checkSignals = signal_mod.checkSignals;
+pub const SignalError = signal_mod.SignalError;
 
 // =============================================================================
 // Base types for inheritance
@@ -190,6 +200,13 @@ pub const Converter = conversion_mod.Converter;
 pub const Conversions = conversion_mod.Conversions;
 
 // =============================================================================
+// Callable
+// =============================================================================
+
+const callable_wrapper_mod = @import("callable.zig");
+pub const Callable = callable_wrapper_mod.Callable;
+
+// =============================================================================
 // Exceptions
 // =============================================================================
 
@@ -198,12 +215,51 @@ pub const PythonException = exceptions_mod.PythonException;
 pub const catchException = exceptions_mod.catchException;
 pub const exceptionPending = exceptions_mod.exceptionPending;
 pub const clearException = exceptions_mod.clearException;
+pub const Null = exceptions_mod.Null;
 pub const raiseException = exceptions_mod.raiseException;
 pub const raiseValueError = exceptions_mod.raiseValueError;
 pub const raiseTypeError = exceptions_mod.raiseTypeError;
 pub const raiseRuntimeError = exceptions_mod.raiseRuntimeError;
 pub const raiseKeyError = exceptions_mod.raiseKeyError;
 pub const raiseIndexError = exceptions_mod.raiseIndexError;
+pub const raiseAttributeError = exceptions_mod.raiseAttributeError;
+pub const raiseMemoryError = exceptions_mod.raiseMemoryError;
+pub const raiseOSError = exceptions_mod.raiseOSError;
+pub const raiseNotImplementedError = exceptions_mod.raiseNotImplementedError;
+pub const raiseOverflowError = exceptions_mod.raiseOverflowError;
+pub const raiseZeroDivisionError = exceptions_mod.raiseZeroDivisionError;
+pub const raiseFileNotFoundError = exceptions_mod.raiseFileNotFoundError;
+pub const raisePermissionError = exceptions_mod.raisePermissionError;
+pub const raiseTimeoutError = exceptions_mod.raiseTimeoutError;
+pub const raiseConnectionError = exceptions_mod.raiseConnectionError;
+pub const raiseEOFError = exceptions_mod.raiseEOFError;
+pub const raiseImportError = exceptions_mod.raiseImportError;
+pub const raiseStopIteration = exceptions_mod.raiseStopIteration;
+pub const raiseSystemError = exceptions_mod.raiseSystemError;
+pub const raiseBufferError = exceptions_mod.raiseBufferError;
+pub const raiseArithmeticError = exceptions_mod.raiseArithmeticError;
+pub const raiseRecursionError = exceptions_mod.raiseRecursionError;
+pub const raiseAssertionError = exceptions_mod.raiseAssertionError;
+pub const raiseFloatingPointError = exceptions_mod.raiseFloatingPointError;
+pub const raiseLookupError = exceptions_mod.raiseLookupError;
+pub const raiseNameError = exceptions_mod.raiseNameError;
+pub const raiseUnboundLocalError = exceptions_mod.raiseUnboundLocalError;
+pub const raiseReferenceError = exceptions_mod.raiseReferenceError;
+pub const raiseStopAsyncIteration = exceptions_mod.raiseStopAsyncIteration;
+pub const raiseSyntaxError = exceptions_mod.raiseSyntaxError;
+pub const raiseUnicodeError = exceptions_mod.raiseUnicodeError;
+pub const raiseModuleNotFoundError = exceptions_mod.raiseModuleNotFoundError;
+pub const raiseBlockingIOError = exceptions_mod.raiseBlockingIOError;
+pub const raiseBrokenPipeError = exceptions_mod.raiseBrokenPipeError;
+pub const raiseChildProcessError = exceptions_mod.raiseChildProcessError;
+pub const raiseConnectionAbortedError = exceptions_mod.raiseConnectionAbortedError;
+pub const raiseConnectionRefusedError = exceptions_mod.raiseConnectionRefusedError;
+pub const raiseConnectionResetError = exceptions_mod.raiseConnectionResetError;
+pub const raiseFileExistsError = exceptions_mod.raiseFileExistsError;
+pub const raiseInterruptedError = exceptions_mod.raiseInterruptedError;
+pub const raiseIsADirectoryError = exceptions_mod.raiseIsADirectoryError;
+pub const raiseNotADirectoryError = exceptions_mod.raiseNotADirectoryError;
+pub const raiseProcessLookupError = exceptions_mod.raiseProcessLookupError;
 pub const PyExc = exceptions_mod.PyExc;
 pub const ExcBase = exceptions_mod.ExcBase;
 pub const ExceptionDef = exceptions_mod.ExceptionDef;

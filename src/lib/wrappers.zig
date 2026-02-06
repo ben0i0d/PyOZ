@@ -89,6 +89,9 @@ pub fn wrapFunctionWithClasses(comptime zig_func: anytype, comptime class_infos:
         }
 
         fn setError(err: anyerror) void {
+            // Don't overwrite an exception already set by Python
+            // (e.g., KeyboardInterrupt from checkSignals)
+            if (py.PyErr_Occurred() != null) return;
             const msg = @errorName(err);
             py.PyErr_SetString(py.PyExc_RuntimeError(), msg.ptr);
         }
@@ -219,6 +222,9 @@ pub fn wrapFunctionWithNamedKeywords(comptime zig_func: anytype, comptime class_
         }
 
         fn setError(err: anyerror) void {
+            // Don't overwrite an exception already set by Python
+            // (e.g., KeyboardInterrupt from checkSignals)
+            if (py.PyErr_Occurred() != null) return;
             const msg = @errorName(err);
             py.PyErr_SetString(py.PyExc_RuntimeError(), msg.ptr);
         }
@@ -380,6 +386,9 @@ pub fn wrapFunctionWithKeywords(comptime zig_func: anytype, comptime class_infos
         }
 
         fn setError(err: anyerror) void {
+            // Don't overwrite an exception already set by Python
+            // (e.g., KeyboardInterrupt from checkSignals)
+            if (py.PyErr_Occurred() != null) return;
             const msg = @errorName(err);
             py.PyErr_SetString(py.PyExc_RuntimeError(), msg.ptr);
         }

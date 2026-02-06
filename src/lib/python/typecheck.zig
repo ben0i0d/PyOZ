@@ -106,3 +106,7 @@ pub inline fn PyByteArray_Check(obj: *PyObject) bool {
     const ba_type: *PyTypeObject = @ptrCast(&c.PyByteArray_Type);
     return Py_TYPE(obj) == ba_type or c.PyType_IsSubtype(Py_TYPE(obj), ba_type) != 0;
 }
+
+pub inline fn PyCallable_Check(obj: *PyObject) bool {
+    return c.PyCallable_Check(obj) != 0;
+}

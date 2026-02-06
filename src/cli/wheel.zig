@@ -130,6 +130,17 @@ fn createWheelZip(
         try z.addFile(stub_name.?, sc);
     }
 
+    // Add pure Python packages
+    var py_files = std.ArrayListUnmanaged([]const u8){};
+    defer {
+        for (py_files.items) |f| allocator.free(f);
+        py_files.deinit(allocator);
+    }
+
+    for (config.py_packages.items) |pkg| {
+        try addPythonPackage(allocator, &z, cwd, pkg, &py_files);
+    }
+
     // Create dist-info directory name
     const dist_info_name = try std.fmt.allocPrint(allocator, "{s}-{s}.dist-info", .{ config.name, config.getVersion() });
     defer allocator.free(dist_info_name);
@@ -194,24 +205,32 @@ fn createWheelZip(
     try z.addFile(metadata_file_path, metadata_content);
 
     // Create RECORD file content (list of files with hashes)
-    const record_content = if (stub_name) |sn|
-        try std.fmt.allocPrint(allocator,
-            \\{s},,
-            \\{s},,
-            \\{s}/WHEEL,,
-            \\{s}/METADATA,,
-            \\{s}/RECORD,,
-            \\
-        , .{ module_name, sn, dist_info_name, dist_info_name, dist_info_name })
-    else
-        try std.fmt.allocPrint(allocator,
-            \\{s},,
-            \\{s}/WHEEL,,
-            \\{s}/METADATA,,
-            \\{s}/RECORD,,
-            \\
-        , .{ module_name, dist_info_name, dist_info_name, dist_info_name });
-    defer allocator.free(record_content);
+    // Start with the module and stubs
+    var record_buf = std.ArrayListUnmanaged(u8){};
+    defer record_buf.deinit(allocator);
+
+    try record_buf.appendSlice(allocator, module_name);
+    try record_buf.appendSlice(allocator, ",,\n");
+
+    if (stub_name) |sn| {
+        try record_buf.appendSlice(allocator, sn);
+        try record_buf.appendSlice(allocator, ",,\n");
+    }
+
+    // Add Python package files to RECORD
+    for (py_files.items) |pf| {
+        try record_buf.appendSlice(allocator, pf);
+        try record_buf.appendSlice(allocator, ",,\n");
+    }
+
+    try record_buf.appendSlice(allocator, dist_info_name);
+    try record_buf.appendSlice(allocator, "/WHEEL,,\n");
+    try record_buf.appendSlice(allocator, dist_info_name);
+    try record_buf.appendSlice(allocator, "/METADATA,,\n");
+    try record_buf.appendSlice(allocator, dist_info_name);
+    try record_buf.appendSlice(allocator, "/RECORD,,\n");
+
+    const record_content = record_buf.items;
 
     const record_file_path = try std.fmt.allocPrint(allocator, "{s}/RECORD", .{dist_info_name});
     defer allocator.free(record_file_path);
@@ -279,6 +298,40 @@ fn getMacOSPlatformTag(allocator: std.mem.Allocator) ![]const u8 {
 
     // Format: macosx_{major}_{minor}_{arch}
     return try std.fmt.allocPrint(allocator, "macosx_{d}_{d}_{s}", .{ major, minor, arch_str });
+}
+
+/// Recursively add all .py files from a package directory to the wheel
+fn addPythonPackage(
+    allocator: std.mem.Allocator,
+    z: *zip.ZipWriter,
+    cwd: std.fs.Dir,
+    pkg_name: []const u8,
+    py_files: *std.ArrayListUnmanaged([]const u8),
+) !void {
+    var pkg_dir = cwd.openDir(pkg_name, .{ .iterate = true }) catch |err| {
+        std.debug.print("  Warning: Python package directory '{s}' not found: {}\n", .{ pkg_name, err });
+        return;
+    };
+    defer pkg_dir.close();
+
+    var walker = try pkg_dir.walk(allocator);
+    defer walker.deinit();
+
+    while (try walker.next()) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.basename, ".py")) continue;
+
+        // Build the in-wheel path: pkg_name/subdir/file.py
+        const wheel_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ pkg_name, entry.path });
+
+        // Build the disk path relative to cwd
+        const disk_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ pkg_name, entry.path });
+        defer allocator.free(disk_path);
+
+        std.debug.print("  Adding Python file: {s}\n", .{wheel_path});
+        try z.addFileFromDisk(wheel_path, disk_path);
+        try py_files.append(allocator, wheel_path);
+    }
 }
 
 /// Publish wheel(s) to PyPI or TestPyPI

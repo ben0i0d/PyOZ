@@ -53,6 +53,55 @@ requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 ```
 
+### PyOZ Settings
+
+The `[tool.pyoz]` section configures the build:
+
+```toml
+[tool.pyoz]
+# Path to your Zig source file (required)
+module-path = "src/lib.zig"
+
+# Optimization level for release builds
+# optimize = "ReleaseFast"
+
+# Strip debug symbols in release builds
+# strip = true
+
+# Linux platform tag for wheel builds
+# linux-platform-tag = "manylinux_2_17_x86_64"
+
+# Pure Python packages to include in the wheel
+# py-packages = ["mypackage", "mypackage_utils"]
+```
+
+### Mixed Zig/Python Packages
+
+To include pure Python packages alongside your Zig extension, use `py-packages`:
+
+```toml
+[tool.pyoz]
+module-path = "src/lib.zig"
+py-packages = ["myutils"]
+```
+
+With this project structure:
+
+```
+myproject/
+├── src/
+│   └── lib.zig          # Zig extension module
+├── myutils/
+│   ├── __init__.py      # Python package
+│   ├── helpers.py
+│   └── config.py
+├── build.zig
+├── build.zig.zon
+└── pyproject.toml
+```
+
+All `.py` files under listed packages are included in the wheel and symlinked during `pyoz develop`.
+
 ## Module Name Consistency
 
 The module name must match in three places:

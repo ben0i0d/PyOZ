@@ -515,6 +515,11 @@ pub fn Converter(comptime class_infos: []const class_mod.ClassInfo) type {
                     return T{ .py_iter = iter };
                 }
 
+                // Check if T is a Callable type
+                if (@hasDecl(T, "_is_pyoz_callable")) {
+                    return T{ .obj = obj };
+                }
+
                 // Check if T is a BufferView or BufferViewMut type
                 if (@hasDecl(T, "_is_pyoz_buffer") or @hasDecl(T, "_is_pyoz_buffer_mut")) {
                     const ElementType = T.ElementType;

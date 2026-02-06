@@ -2920,6 +2920,273 @@ test "PrivateFieldsExample - setting private fields raises AttributeError" {
 }
 
 // ============================================================================
+// Callable Tests - Type-safe Python callback invocation
+// ============================================================================
+
+test "Callable - apply_callback with lambda" {
+    const python = try initTestPython();
+
+    try std.testing.expectEqual(@as(i64, 7), try python.eval(i64, "example.apply_callback(lambda x, y: x + y, 3, 4)"));
+}
+
+test "Callable - apply_callback with multiply" {
+    const python = try initTestPython();
+
+    try std.testing.expectEqual(@as(i64, 12), try python.eval(i64, "example.apply_callback(lambda x, y: x * y, 3, 4)"));
+}
+
+test "Callable - transform_value with float" {
+    const python = try initTestPython();
+
+    const result = try python.eval(f64, "example.transform_value(lambda x: x * 2.5, 4.0)");
+    try std.testing.expectApproxEqAbs(@as(f64, 10.0), result, 0.001);
+}
+
+test "Callable - call_no_args" {
+    const python = try initTestPython();
+
+    try std.testing.expectEqual(@as(i64, 42), try python.eval(i64, "example.call_no_args(lambda: 42)"));
+}
+
+test "Callable - call_void" {
+    const python = try initTestPython();
+
+    // call_void returns True on success (void callable)
+    try python.exec(
+        \\results = []
+        \\def side_effect(x):
+        \\    results.append(x)
+        \\
+        \\success = example.call_void(side_effect, 99)
+    );
+    try std.testing.expect(try python.eval(bool, "success"));
+    try std.testing.expectEqual(@as(i64, 99), try python.eval(i64, "results[0]"));
+}
+
+test "Callable - exception propagation" {
+    const python = try initTestPython();
+
+    // When the callback raises, the exception propagates to Python
+    try python.exec(
+        \\def bad_fn(x, y):
+        \\    raise ValueError("oops")
+        \\
+        \\try:
+        \\    result = example.apply_callback(bad_fn, 1, 2)
+        \\    exc_propagated = False
+        \\except ValueError as e:
+        \\    exc_propagated = True
+        \\    exc_msg = str(e)
+    );
+    try std.testing.expect(try python.eval(bool, "exc_propagated"));
+    try std.testing.expect(try python.eval(bool, "exc_msg == 'oops'"));
+}
+
+test "Callable - with built-in functions" {
+    const python = try initTestPython();
+
+    // Pass a built-in function as callback
+    try std.testing.expectEqual(@as(i64, 5), try python.eval(i64, "example.apply_callback(pow, 5, 1)"));
+}
+
+// ============================================================================
+// __del__ Tests - Custom cleanup on deallocation
+// ============================================================================
+
+test "Resource - creation and validity" {
+    const python = try initTestPython();
+
+    try python.exec("r = example.Resource(42)");
+    try std.testing.expect(try python.eval(bool, "r.is_valid()"));
+    try std.testing.expectEqual(@as(i64, 42), try python.eval(i64, "r.get_handle()"));
+}
+
+test "Resource - __del__ runs on delete" {
+    const python = try initTestPython();
+
+    // Create resource and delete it — __del__ runs via tp_dealloc
+    // The test verifies no crash occurs and no exception is raised
+    try python.exec(
+        \\r = example.Resource(99)
+        \\assert r.is_valid() == True
+        \\del r
+        \\# If we get here, __del__ ran without crashing
+        \\del_test_passed = True
+    );
+    try std.testing.expect(try python.eval(bool, "del_test_passed"));
+}
+
+test "Resource - __del__ runs when refcount drops to zero" {
+    const python = try initTestPython();
+
+    // Object goes out of scope when function returns — __del__ should fire
+    try python.exec(
+        \\def create_and_discard():
+        \\    r = example.Resource(123)
+        \\    assert r.is_valid()
+        \\    return r.get_handle()
+        \\
+        \\handle = create_and_discard()
+        \\# r's refcount dropped to zero after function returned
+        \\refcount_test_passed = (handle == 123)
+    );
+    try std.testing.expect(try python.eval(bool, "refcount_test_passed"));
+}
+
+// ============================================================================
+// Optional Constructor Arguments Tests
+// ============================================================================
+
+test "FlexPoint - all args" {
+    const python = try initTestPython();
+
+    try python.exec("p = example.FlexPoint(1.0, 2.0, 3.0)");
+    try std.testing.expectEqual(@as(f64, 1.0), try python.eval(f64, "p.x"));
+    try std.testing.expectEqual(@as(f64, 2.0), try python.eval(f64, "p.y"));
+    try std.testing.expectEqual(@as(f64, 3.0), try python.eval(f64, "p.z"));
+}
+
+test "FlexPoint - omit optional args" {
+    const python = try initTestPython();
+
+    try python.exec("p = example.FlexPoint(5.0)");
+    try std.testing.expectEqual(@as(f64, 5.0), try python.eval(f64, "p.x"));
+    try std.testing.expectEqual(@as(f64, 0.0), try python.eval(f64, "p.y"));
+    try std.testing.expectEqual(@as(f64, 0.0), try python.eval(f64, "p.z"));
+}
+
+test "FlexPoint - partial optional args" {
+    const python = try initTestPython();
+
+    try python.exec("p = example.FlexPoint(1.0, 9.0)");
+    try std.testing.expectEqual(@as(f64, 1.0), try python.eval(f64, "p.x"));
+    try std.testing.expectEqual(@as(f64, 9.0), try python.eval(f64, "p.y"));
+    try std.testing.expectEqual(@as(f64, 0.0), try python.eval(f64, "p.z"));
+}
+
+test "FlexPoint - too few args raises TypeError" {
+    const python = try initTestPython();
+
+    try python.exec(
+        \\try:
+        \\    p = example.FlexPoint()
+        \\    too_few_ok = False
+        \\except TypeError:
+        \\    too_few_ok = True
+    );
+    try std.testing.expect(try python.eval(bool, "too_few_ok"));
+}
+
+// ============================================================================
+// Freelist Tests - Object pooling
+// ============================================================================
+
+test "Freelist - memory reuse" {
+    const python = try initTestPython();
+
+    // SimplePoint has __freelist__ = 8
+    // Create and destroy, then create again — should reuse memory
+    try python.exec(
+        \\p1 = example.SimplePoint(1.0, 2.0)
+        \\id1 = id(p1)
+        \\del p1
+        \\p2 = example.SimplePoint(3.0, 4.0)
+        \\id2 = id(p2)
+        \\reused = (id1 == id2)
+    );
+    try std.testing.expect(try python.eval(bool, "reused"));
+    // Verify fresh values, not stale
+    try std.testing.expectEqual(@as(f64, 3.0), try python.eval(f64, "p2.x"));
+    try std.testing.expectEqual(@as(f64, 4.0), try python.eval(f64, "p2.y"));
+}
+
+test "Freelist - rapid create/destroy cycles" {
+    const python = try initTestPython();
+
+    try python.exec(
+        \\for i in range(200):
+        \\    p = example.SimplePoint(float(i), float(i * 2))
+        \\    assert p.x == float(i)
+        \\    assert p.y == float(i * 2)
+        \\    del p
+        \\freelist_cycles_ok = True
+    );
+    try std.testing.expect(try python.eval(bool, "freelist_cycles_ok"));
+}
+
+// ============================================================================
+// __class_getitem__ Tests - Generic type syntax (PEP 560)
+// ============================================================================
+
+test "__class_getitem__ - basic subscript" {
+    const python = try initTestPython();
+
+    // SimplePoint has __class_getitem__ = true
+    try python.exec(
+        \\alias = example.SimplePoint[int]
+        \\alias_name = str(alias)
+    );
+    const alias_name = try python.eval([]const u8, "alias_name");
+
+    // On Python 3.9+ we get a GenericAlias, on 3.8 we get the class itself
+    if (python_version.minor >= 9) {
+        try std.testing.expectEqualStrings("example.SimplePoint[int]", alias_name);
+    } else {
+        try std.testing.expectEqualStrings("<class 'example.SimplePoint'>", alias_name);
+    }
+}
+
+test "__class_getitem__ - multiple type params" {
+    const python = try initTestPython();
+
+    try python.exec(
+        \\alias = example.SimplePoint[int, str]
+        \\alias_name = str(alias)
+    );
+    const alias_name = try python.eval([]const u8, "alias_name");
+
+    if (python_version.minor >= 9) {
+        try std.testing.expectEqualStrings("example.SimplePoint[int, str]", alias_name);
+    }
+}
+
+test "__class_getitem__ - usable in type annotations" {
+    const python = try initTestPython();
+
+    // Verify it works in annotation context without error
+    try python.exec(
+        \\def foo(p: example.SimplePoint[float]) -> None:
+        \\    pass
+        \\annotation_works = True
+    );
+    try std.testing.expect(try python.eval(bool, "annotation_works"));
+}
+
+// ============================================================================
+// Signal handling tests
+// ============================================================================
+
+test "checkSignals - no pending signal returns normally" {
+    _ = try initTestPython();
+    // With no signal pending, checkSignals should return normally
+    try pyoz.checkSignals();
+}
+
+test "interruptible_sum - correct result for small n" {
+    const python = try initTestPython();
+    const r = try python.eval(i64, "example.interruptible_sum(100)");
+    // sum of 0..99 = 99 * 100 / 2 = 4950
+    try std.testing.expectEqual(@as(i64, 4950), r);
+}
+
+test "interruptible_sum - correct result for larger n" {
+    const python = try initTestPython();
+    const r = try python.eval(i64, "example.interruptible_sum(1000000)");
+    // sum of 0..999999 = 999999 * 1000000 / 2 = 499999500000
+    try std.testing.expectEqual(@as(i64, 499999500000), r);
+}
+
+// ============================================================================
 // Symreader Tests - Binary Format Parsing
 // ============================================================================
 

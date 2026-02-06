@@ -299,6 +299,27 @@ pub fn developMode(allocator: std.mem.Allocator) !void {
         std.debug.print("\nSymlinked to: {s}\n", .{target_path});
     }
 
+    // Also symlink/copy Python packages
+    for (config.py_packages.items) |pkg| {
+        var pkg_abs_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const pkg_abs = std.fs.cwd().realpath(pkg, &pkg_abs_buf) catch {
+            std.debug.print("  Warning: Python package '{s}' not found, skipping\n", .{pkg});
+            continue;
+        };
+        const pkg_target = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ site_dir, pkg });
+        defer allocator.free(pkg_target);
+
+        if (builtin.os.tag != .windows) {
+            // Remove existing symlink/dir
+            std.fs.deleteFileAbsolute(pkg_target) catch {};
+            std.posix.symlink(pkg_abs, pkg_target) catch |err| {
+                std.debug.print("  Warning: Could not symlink Python package '{s}': {s}\n", .{ pkg, @errorName(err) });
+                continue;
+            };
+            std.debug.print("  Symlinked Python package: {s}\n", .{pkg});
+        }
+    }
+
     std.debug.print("\nDevelopment install complete!\n", .{});
     std.debug.print("Test with: {s} -c \"import {s}; print({s}.add(2, 3))\"\n", .{ python_cmd, config.name, config.name });
 }
