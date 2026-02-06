@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **`pyoz init` now patches dependency hash** - When creating a project with a remote PyOZ URL dependency, `pyoz init` now automatically patches the `.hash` field in `build.zig.zon` by running `zig build` a second time after fingerprint patching. Previously, users had to manually fix the missing hash error on first build.
+- **`raise*` functions no longer require `inline`** - All `raise*` functions (`raiseRuntimeError`, `raiseValueError`, etc.) are now declared `inline`. Previously, calling them from a non-inline function caused a compilation error (`call to function with comptime-only return type '@TypeOf(null)' is evaluated at comptime`) because the `Null` return type is comptime-only. Users had to manually add `inline` to their own wrapper functions as a workaround.
 
 ## [0.9.0] - 2026-02-06
 
