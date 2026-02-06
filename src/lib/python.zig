@@ -222,6 +222,7 @@ pub const PyErr_SetObject = mod.PyErr_SetObject;
 pub const PyErr_GetExcInfo = mod.PyErr_GetExcInfo;
 pub const PyErr_NewException = mod.PyErr_NewException;
 pub const PyErr_Print = mod.PyErr_Print;
+pub const PyErr_CheckSignals = mod.PyErr_CheckSignals;
 pub const PyExc_RuntimeError = mod.PyExc_RuntimeError;
 pub const PyExc_TypeError = mod.PyExc_TypeError;
 pub const PyExc_ValueError = mod.PyExc_ValueError;

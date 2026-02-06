@@ -32,6 +32,15 @@ dist/
 └── mymodule-0.1.0-cp311-cp311-linux_x86_64.whl
 ```
 
+### Wheel Contents
+
+The wheel includes:
+
+- Compiled Zig extension (`.so` / `.pyd`)
+- Type stubs (`.pyi`) — unless `--no-stubs` is passed
+- Python packages listed in `py-packages` (see [configuration](configuration.md))
+- dist-info (WHEEL, METADATA, RECORD)
+
 ---
 
 # pyoz develop

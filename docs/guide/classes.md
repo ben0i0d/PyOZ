@@ -207,6 +207,33 @@ For custom attribute behavior on other classes:
 | `__setattr__(name: []const u8, value: *PyObject)` | Called for all attribute assignments |
 | `__delattr__(name: []const u8) !void` | Called when deleting attribute |
 
+## Generic Type Syntax (`__class_getitem__`)
+
+Enable `MyClass[int]` subscript syntax (PEP 560) by declaring a single constant:
+
+```zig
+const Point = struct {
+    x: f64,
+    y: f64,
+
+    pub const __class_getitem__ = true;
+};
+```
+
+Python:
+```python
+Point[int]          # returns types.GenericAlias on Python 3.9+
+Point[int, float]   # multiple type parameters
+```
+
+This is useful for type annotations and generic patterns:
+```python
+def transform(points: list[Point[float]]) -> Point[float]:
+    ...
+```
+
+Works in ABI3 mode. On Python 3.8, falls back to returning the class itself.
+
 ## Class Configuration
 
 ### Frozen (Immutable) Classes
@@ -235,6 +262,24 @@ pub const classattr_PI: f64 = 3.14159;
 ```
 
 Python: `Circle.PI  # 3.14159`
+
+### Freelist (Object Pooling)
+
+For classes that are frequently created and destroyed, enable a freelist to reuse deallocated objects instead of going through the allocator:
+
+```zig
+const Token = struct {
+    kind: i64,
+    start: i64,
+    end: i64,
+
+    pub const __freelist__: usize = 32;  // pool up to 32 objects
+};
+```
+
+When an object is garbage-collected, it's pushed onto the freelist instead of being freed. The next `Token(...)` call reuses a pooled object, skipping allocation. Objects are fully re-initialized on reuse.
+
+Only applies to simple types (no `__dict__`, no weakrefs). The freelist is a fixed-size static array — once full, excess objects are freed normally.
 
 ### Inheritance
 

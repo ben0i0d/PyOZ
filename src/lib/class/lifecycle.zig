@@ -45,11 +45,41 @@ pub fn LifecycleBuilder(
     };
 
     return struct {
-        /// __new__ - allocate object
+        // Freelist support: if T declares __freelist__ = N, we cache up to N
+        // deallocated objects for reuse instead of freeing them.
+        const freelist_size = if (@hasDecl(T, "__freelist__")) @field(T, "__freelist__") else 0;
+        const has_freelist = freelist_size > 0;
+
+        var freelist: [freelist_size]?*py.PyObject = [_]?*py.PyObject{null} ** freelist_size;
+        var freelist_count: usize = 0;
+
+        /// __new__ - allocate object (checks freelist first)
         pub fn py_new(type_obj: ?*py.PyTypeObject, args: ?*py.PyObject, kwds: ?*py.PyObject) callconv(.c) ?*py.PyObject {
             _ = args;
             _ = kwds;
             const t = type_obj orelse return null;
+
+            // Try to reuse from freelist
+            if (has_freelist and freelist_count > 0) {
+                freelist_count -= 1;
+                const obj = freelist[freelist_count].?;
+                freelist[freelist_count] = null;
+
+                // Re-initialize the object
+                if (comptime @hasField(py.c.PyObject, "ob_refcnt")) {
+                    const base: *py.c.PyObject = @ptrCast(@alignCast(obj));
+                    base.ob_refcnt = 1;
+                } else {
+                    const ob_ptr: *py.Py_ssize_t = @ptrCast(@alignCast(obj));
+                    ob_ptr.* = 1;
+                }
+
+                const self: *PyWrapper = @ptrCast(@alignCast(obj));
+                self.getData().* = std.mem.zeroes(T);
+                self.initExtra();
+                return obj;
+            }
+
             const obj = py.PyType_GenericAlloc(t, 0) orelse return null;
             const self: *PyWrapper = @ptrCast(@alignCast(obj));
             self.getData().* = std.mem.zeroes(T);
@@ -84,12 +114,22 @@ pub fn LifecycleBuilder(
                 const new_fn_info = @typeInfo(NewFn).@"fn";
                 const new_params = new_fn_info.params;
 
-                if (arg_count != new_params.len) {
+                // Count required params (non-optional) vs total
+                const required_count = comptime blk: {
+                    var count: usize = 0;
+                    for (new_params) |p| {
+                        const PT = p.type.?;
+                        if (@typeInfo(PT) != .optional) count += 1;
+                    }
+                    break :blk count;
+                };
+
+                if (arg_count < required_count or arg_count > new_params.len) {
                     py.PyErr_SetString(py.PyExc_TypeError(), "Wrong number of arguments to __init__");
                     return -1;
                 }
 
-                const zig_args = parseNewArgs(py_args) catch {
+                const zig_args = parseNewArgs(py_args, @intCast(arg_count)) catch {
                     py.PyErr_SetString(py.PyExc_TypeError(), "Failed to convert arguments");
                     return -1;
                 };
@@ -123,7 +163,7 @@ pub fn LifecycleBuilder(
             return 0;
         }
 
-        fn parseNewArgs(py_args: *py.PyObject) !NewArgsTuple() {
+        fn parseNewArgs(py_args: *py.PyObject, actual_count: usize) !NewArgsTuple() {
             if (!@hasDecl(T, "__new__")) {
                 return error.NoNewFunction;
             }
@@ -132,8 +172,18 @@ pub fn LifecycleBuilder(
 
             var result: NewArgsTuple() = undefined;
             inline for (0..new_params.len) |i| {
-                const item = py.PyTuple_GetItem(py_args, @intCast(i)) orelse return error.InvalidArgument;
-                result[i] = try getConversions().fromPy(new_params[i].type.?, item);
+                const ParamType = new_params[i].type.?;
+                if (i < actual_count) {
+                    const item = py.PyTuple_GetItem(py_args, @intCast(i)) orelse return error.InvalidArgument;
+                    result[i] = try getConversions().fromPy(ParamType, item);
+                } else {
+                    // Missing arg — must be optional, fill with null
+                    if (@typeInfo(ParamType) == .optional) {
+                        result[i] = null;
+                    } else {
+                        return error.MissingArgument;
+                    }
+                }
             }
             return result;
         }
@@ -173,6 +223,16 @@ pub fn LifecycleBuilder(
                 if (self.getDict()) |dict| {
                     py.Py_DecRef(dict);
                     self.setDict(null);
+                }
+            }
+
+            // Try to cache in freelist instead of freeing
+            // Only for non-subclass, non-dict, non-weakref types (simple objects)
+            if (has_freelist and !has_dict_support and !has_weakref_support and !is_builtin_subclass) {
+                if (freelist_count < freelist_size) {
+                    freelist[freelist_count] = obj;
+                    freelist_count += 1;
+                    return;
                 }
             }
 

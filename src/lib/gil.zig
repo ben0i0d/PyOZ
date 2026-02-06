@@ -54,3 +54,27 @@ pub const GILState = struct {
 pub fn acquireGIL() GILState {
     return .{ .state = py.PyGILState_Ensure() };
 }
+
+/// Release the GIL, call a function, then reacquire the GIL.
+/// The function must not access any Python objects.
+///
+/// Example:
+/// ```zig
+/// fn heavy_work(data: []const u8) i64 {
+///     return pyoz.allowThreads(compute, .{data});
+/// }
+/// ```
+pub fn allowThreads(comptime func: anytype, args: anytype) @typeInfo(@TypeOf(func)).@"fn".return_type.? {
+    const state = py.PyEval_SaveThread();
+    const result = @call(.auto, func, args);
+    py.PyEval_RestoreThread(state);
+    return result;
+}
+
+/// Like `allowThreads` but for functions that return errors.
+/// Releases the GIL, calls the function, reacquires the GIL, then propagates the error.
+pub fn allowThreadsTry(comptime func: anytype, args: anytype) @typeInfo(@TypeOf(func)).@"fn".return_type.? {
+    const state = py.PyEval_SaveThread();
+    defer py.PyEval_RestoreThread(state);
+    return @call(.auto, func, args);
+}

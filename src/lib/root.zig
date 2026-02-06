@@ -172,6 +172,16 @@ pub const GILGuard = gil_mod.GILGuard;
 pub const GILState = gil_mod.GILState;
 pub const releaseGIL = gil_mod.releaseGIL;
 pub const acquireGIL = gil_mod.acquireGIL;
+pub const allowThreads = gil_mod.allowThreads;
+pub const allowThreadsTry = gil_mod.allowThreadsTry;
+
+// =============================================================================
+// Signal Handling
+// =============================================================================
+
+const signal_mod = @import("signal.zig");
+pub const checkSignals = signal_mod.checkSignals;
+pub const SignalError = signal_mod.SignalError;
 
 // =============================================================================
 // Base types for inheritance

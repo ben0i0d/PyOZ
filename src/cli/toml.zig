@@ -15,6 +15,7 @@ pub const PyProjectConfig = struct {
     strip: bool = false,
     linux_platform_tag: []const u8 = "",
     abi3: bool = false,
+    py_packages: std.ArrayListUnmanaged([]const u8) = .{},
 
     // Track which fields were allocated
     name_allocated: bool = false,
@@ -33,6 +34,8 @@ pub const PyProjectConfig = struct {
         if (self.module_path_allocated) allocator.free(self.module_path);
         if (self.optimize_allocated) allocator.free(self.optimize);
         if (self.linux_platform_tag_allocated) allocator.free(self.linux_platform_tag);
+        for (self.py_packages.items) |pkg| allocator.free(pkg);
+        self.py_packages.deinit(allocator);
     }
 
     /// Get version with fallback to default
@@ -131,6 +134,19 @@ pub fn parse(allocator: std.mem.Allocator, content: []const u8) !PyProjectConfig
                     config.linux_platform_tag_allocated = true;
                 } else if (std.mem.eql(u8, key, "abi3")) {
                     config.abi3 = std.mem.eql(u8, value, "true");
+                } else if (std.mem.eql(u8, key, "py-packages")) {
+                    // Parse TOML array: ["pkg1", "pkg2"]
+                    const raw = std.mem.trim(u8, trimmed[eq_pos + 1 ..], &std.ascii.whitespace);
+                    if (raw.len >= 2 and raw[0] == '[' and raw[raw.len - 1] == ']') {
+                        const inner = raw[1 .. raw.len - 1];
+                        var items = std.mem.splitScalar(u8, inner, ',');
+                        while (items.next()) |item| {
+                            const stripped = stripQuotes(std.mem.trim(u8, item, &std.ascii.whitespace));
+                            if (stripped.len > 0) {
+                                try config.py_packages.append(allocator, try allocator.dupe(u8, stripped));
+                            }
+                        }
+                    }
                 }
             },
             else => {},

@@ -98,6 +98,17 @@ fn compute_sum_with_gil(n: i64) i64 {
     return sum;
 }
 
+/// Interruptible sum — supports Ctrl+C during long computation
+fn interruptible_sum(n: i64) !i64 {
+    var sum: i64 = 0;
+    var i: i64 = 0;
+    while (i < n) : (i += 1) {
+        if (@mod(i, 100000) == 0) try pyoz.checkSignals();
+        sum +%= i;
+    }
+    return sum;
+}
+
 // ============================================================================
 // Dict support examples
 // ============================================================================
@@ -2690,6 +2701,9 @@ const PrivateFieldsExample = struct {
 const SimplePoint = struct {
     x: f64,
     y: f64,
+
+    pub const __class_getitem__ = true;
+    pub const __freelist__: usize = 8;
 };
 
 // ============================================================================
@@ -2717,6 +2731,18 @@ const Resource = struct {
     }
 };
 
+// ============================================================================
+// FlexPoint - demonstrates optional constructor arguments
+const FlexPoint = struct {
+    x: f64,
+    y: f64,
+    z: f64,
+
+    pub fn __new__(x: f64, y: ?f64, z: ?f64) FlexPoint {
+        return .{ .x = x, .y = y orelse 0.0, .z = z orelse 0.0 };
+    }
+};
+
 // Module Definition
 // ============================================================================
 
@@ -2733,6 +2759,7 @@ const Example = pyoz.module(.{
         pyoz.kwfunc("power", power, "Calculate base^exponent (default exponent=2)"),
         pyoz.func("compute_sum_no_gil", compute_sum_no_gil, "Sum of squares (releases GIL)"),
         pyoz.func("compute_sum_with_gil", compute_sum_with_gil, "Sum of squares (keeps GIL)"),
+        pyoz.func("interruptible_sum", interruptible_sum, "Sum 0..n with Ctrl+C support"),
         pyoz.func("sum_dict_values", sum_dict_values, "Sum integer values in a dict"),
         pyoz.func("get_dict_value", get_dict_value, "Get value from dict by key"),
         pyoz.func("make_dict", make_dict, "Return a dict with one/two/three"),
@@ -2879,6 +2906,7 @@ const Example = pyoz.module(.{
         pyoz.class("PrivateFieldsExample", PrivateFieldsExample),
         pyoz.class("SimplePoint", SimplePoint),
         pyoz.class("Resource", Resource),
+        pyoz.class("FlexPoint", FlexPoint),
     },
     .exceptions = &.{
         pyoz.exception("ValidationError", .{ .doc = "Raised when validation fails", .base = .ValueError }),

@@ -1,6 +1,6 @@
 site_name: PyOZ
 site_description: Python extensions in Zig, made easy
-site_url: https://dzonerzy.github.io/PyOZ
+site_url: https://pyoz.dev
 repo_url: https://github.com/dzonerzy/PyOZ
 repo_name: dzonerzy/PyOZ
 

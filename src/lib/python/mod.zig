@@ -269,6 +269,7 @@ pub const PyErr_SetObject = error_ops.PyErr_SetObject;
 pub const PyErr_GetExcInfo = error_ops.PyErr_GetExcInfo;
 pub const PyErr_NewException = error_ops.PyErr_NewException;
 pub const PyErr_Print = error_ops.PyErr_Print;
+pub const PyErr_CheckSignals = error_ops.PyErr_CheckSignals;
 pub const PyExc_RuntimeError = error_ops.PyExc_RuntimeError;
 pub const PyExc_TypeError = error_ops.PyExc_TypeError;
 pub const PyExc_ValueError = error_ops.PyExc_ValueError;

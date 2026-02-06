@@ -328,3 +328,14 @@ pub inline fn PyExc_UnicodeWarning() *PyObject {
 pub inline fn PyExc_UserWarning() *PyObject {
     return @ptrCast(c.PyExc_UserWarning);
 }
+
+// ============================================================================
+// Signal handling
+// ============================================================================
+
+/// Check for pending signals (e.g., Ctrl+C / SIGINT).
+/// Returns 0 if no signal is pending, -1 if a signal was received
+/// and the corresponding Python exception (e.g., KeyboardInterrupt) has been set.
+pub inline fn PyErr_CheckSignals() c_int {
+    return c.PyErr_CheckSignals();
+}

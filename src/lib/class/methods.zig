@@ -54,8 +54,10 @@ pub fn MethodBuilder(comptime name: [*:0]const u8, comptime T: type, comptime Py
             return count;
         }
 
+        const has_class_getitem = @hasDecl(T, "__class_getitem__") and @TypeOf(@field(T, "__class_getitem__")) == bool and @field(T, "__class_getitem__") == true;
+
         pub fn totalMethodCount() usize {
-            return countMethods() + countStaticMethods() + countClassMethods();
+            return countMethods() + countStaticMethods() + countClassMethods() + (if (has_class_getitem) @as(usize, 1) else 0);
         }
 
         fn isInstanceMethod(comptime decl_name: []const u8) bool {
@@ -197,6 +199,17 @@ pub fn MethodBuilder(comptime name: [*:0]const u8, comptime T: type, comptime Py
                 }
             }
 
+            // __class_getitem__ - enables MyClass[T] syntax for generic types
+            if (has_class_getitem) {
+                m[idx] = .{
+                    .ml_name = "__class_getitem__",
+                    .ml_meth = @ptrCast(&classGetItemWrapper),
+                    .ml_flags = py.METH_O | py.METH_CLASS,
+                    .ml_doc = "See PEP 585",
+                };
+                idx += 1;
+            }
+
             // Sentinel
             m[total_count] = .{
                 .ml_name = null,
@@ -207,6 +220,43 @@ pub fn MethodBuilder(comptime name: [*:0]const u8, comptime T: type, comptime Py
 
             break :blk m;
         };
+
+        /// __class_getitem__(cls, item) -> GenericAlias or cls
+        /// Returns types.GenericAlias(cls, item) for proper runtime generics,
+        /// or falls back to cls on older Python versions.
+        fn classGetItemWrapper(cls: ?*py.PyObject, item: ?*py.PyObject) callconv(.c) ?*py.PyObject {
+            const cls_obj = cls orelse return null;
+            const item_obj = item orelse return null;
+
+            // Try to create a proper GenericAlias via types.GenericAlias(cls, item)
+            const types_mod = py.c.PyImport_ImportModule("types") orelse {
+                // Fallback: return cls
+                py.Py_IncRef(cls_obj);
+                return cls_obj;
+            };
+            defer py.c.Py_DecRef(types_mod);
+
+            const ga_type = py.c.PyObject_GetAttrString(types_mod, "GenericAlias") orelse {
+                // Python 3.8: GenericAlias doesn't exist, return cls
+                py.c.PyErr_Clear();
+                py.Py_IncRef(cls_obj);
+                return cls_obj;
+            };
+            defer py.c.Py_DecRef(ga_type);
+
+            const args = py.c.PyTuple_Pack(2, cls_obj, item_obj) orelse {
+                py.Py_IncRef(cls_obj);
+                return cls_obj;
+            };
+            defer py.c.Py_DecRef(args);
+
+            return py.c.PyObject_Call(ga_type, args, null) orelse {
+                // If GenericAlias construction fails, return cls
+                py.c.PyErr_Clear();
+                py.Py_IncRef(cls_obj);
+                return cls_obj;
+            };
+        }
 
         // ====================================================================
         // Instance method wrapper generation
@@ -325,8 +375,12 @@ pub fn MethodBuilder(comptime name: [*:0]const u8, comptime T: type, comptime Py
                             }
                             return Conv.toPy(ValueType, value);
                         } else |err| {
-                            const msg = @errorName(err);
-                            py.PyErr_SetString(py.PyExc_RuntimeError(), msg.ptr);
+                            // Don't overwrite an exception already set by Python
+                            // (e.g., KeyboardInterrupt from checkSignals)
+                            if (py.PyErr_Occurred() == null) {
+                                const msg = @errorName(err);
+                                py.PyErr_SetString(py.PyExc_RuntimeError(), msg.ptr);
+                            }
                             return null;
                         }
                     } else if (ReturnType == void) {
@@ -419,8 +473,12 @@ pub fn MethodBuilder(comptime name: [*:0]const u8, comptime T: type, comptime Py
                         if (result) |value| {
                             return Conv.toPy(@TypeOf(value), value);
                         } else |err| {
-                            const msg = @errorName(err);
-                            py.PyErr_SetString(py.PyExc_RuntimeError(), msg.ptr);
+                            // Don't overwrite an exception already set by Python
+                            // (e.g., KeyboardInterrupt from checkSignals)
+                            if (py.PyErr_Occurred() == null) {
+                                const msg = @errorName(err);
+                                py.PyErr_SetString(py.PyExc_RuntimeError(), msg.ptr);
+                            }
                             return null;
                         }
                     } else if (ReturnType == void) {
@@ -516,8 +574,12 @@ pub fn MethodBuilder(comptime name: [*:0]const u8, comptime T: type, comptime Py
                         if (result) |value| {
                             return Conv.toPy(@TypeOf(value), value);
                         } else |err| {
-                            const msg = @errorName(err);
-                            py.PyErr_SetString(py.PyExc_RuntimeError(), msg.ptr);
+                            // Don't overwrite an exception already set by Python
+                            // (e.g., KeyboardInterrupt from checkSignals)
+                            if (py.PyErr_Occurred() == null) {
+                                const msg = @errorName(err);
+                                py.PyErr_SetString(py.PyExc_RuntimeError(), msg.ptr);
+                            }
                             return null;
                         }
                     } else if (ReturnType == void) {
