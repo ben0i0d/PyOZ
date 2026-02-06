@@ -259,6 +259,44 @@ For classes holding Python object references, implement garbage collection hooks
 
 Call `visitor.call(self.stored_obj)` for each `?*PyObject` field.
 
+## Custom Cleanup (`__del__`)
+
+Define `__del__` to run custom cleanup when Python garbage-collects your object. This is called during `tp_dealloc`, before the object is freed.
+
+```zig
+const Resource = struct {
+    handle: i64,
+    _freed: bool,
+
+    pub fn __new__(handle: i64) Resource {
+        return .{ .handle = handle, ._freed = false };
+    }
+
+    pub fn __del__(self: *Resource) void {
+        // Free C memory, close file handles, release resources, etc.
+        self._freed = true;
+        self.handle = -1;
+    }
+
+    pub fn is_valid(self: *const Resource) bool {
+        return self.handle >= 0 and !self._freed;
+    }
+};
+```
+
+Python:
+```python
+r = Resource(42)
+r.is_valid()  # True
+del r         # __del__ runs automatically
+```
+
+**Signature:** `pub fn __del__(self: *Self) void`
+
+`__del__` is called before weakref cleanup, `__dict__` cleanup, and object deallocation, so all fields and state are still accessible. Works in both normal and ABI3 modes. Types that don't define `__del__` have zero overhead — the check is resolved at compile time.
+
+Use this for C interop structs that allocate memory, open file descriptors, or hold external resources that need explicit cleanup.
+
 ## Method Chaining
 
 Methods returning `*Self` or `*const Self` enable chaining. PyOZ automatically handles Python reference counting:

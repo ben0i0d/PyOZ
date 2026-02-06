@@ -72,6 +72,91 @@ pub const PythonException = struct {
         return self.matches(py.PyExc_AttributeError());
     }
 
+    /// Check if this is a MemoryError
+    pub fn isMemoryError(self: PythonException) bool {
+        return self.matches(py.PyExc_MemoryError());
+    }
+
+    /// Check if this is an OSError
+    pub fn isOSError(self: PythonException) bool {
+        return self.matches(py.PyExc_OSError());
+    }
+
+    /// Check if this is a NotImplementedError
+    pub fn isNotImplementedError(self: PythonException) bool {
+        return self.matches(py.PyExc_NotImplementedError());
+    }
+
+    /// Check if this is an OverflowError
+    pub fn isOverflowError(self: PythonException) bool {
+        return self.matches(py.PyExc_OverflowError());
+    }
+
+    /// Check if this is a FileNotFoundError
+    pub fn isFileNotFoundError(self: PythonException) bool {
+        return self.matches(py.PyExc_FileNotFoundError());
+    }
+
+    /// Check if this is a PermissionError
+    pub fn isPermissionError(self: PythonException) bool {
+        return self.matches(py.PyExc_PermissionError());
+    }
+
+    /// Check if this is a TimeoutError
+    pub fn isTimeoutError(self: PythonException) bool {
+        return self.matches(py.PyExc_TimeoutError());
+    }
+
+    /// Check if this is a ConnectionError
+    pub fn isConnectionError(self: PythonException) bool {
+        return self.matches(py.PyExc_ConnectionError());
+    }
+
+    /// Check if this is an EOFError
+    pub fn isEOFError(self: PythonException) bool {
+        return self.matches(py.PyExc_EOFError());
+    }
+
+    /// Check if this is an ImportError
+    pub fn isImportError(self: PythonException) bool {
+        return self.matches(py.PyExc_ImportError());
+    }
+
+    /// Check if this is a NameError
+    pub fn isNameError(self: PythonException) bool {
+        return self.matches(py.PyExc_NameError());
+    }
+
+    /// Check if this is a SyntaxError
+    pub fn isSyntaxError(self: PythonException) bool {
+        return self.matches(py.PyExc_SyntaxError());
+    }
+
+    /// Check if this is a RecursionError
+    pub fn isRecursionError(self: PythonException) bool {
+        return self.matches(py.PyExc_RecursionError());
+    }
+
+    /// Check if this is an ArithmeticError
+    pub fn isArithmeticError(self: PythonException) bool {
+        return self.matches(py.PyExc_ArithmeticError());
+    }
+
+    /// Check if this is a BufferError
+    pub fn isBufferError(self: PythonException) bool {
+        return self.matches(py.PyExc_BufferError());
+    }
+
+    /// Check if this is a SystemError
+    pub fn isSystemError(self: PythonException) bool {
+        return self.matches(py.PyExc_SystemError());
+    }
+
+    /// Check if this is a UnicodeError
+    pub fn isUnicodeError(self: PythonException) bool {
+        return self.matches(py.PyExc_UnicodeError());
+    }
+
     /// Get the string representation of the exception value
     pub fn getMessage(self: PythonException) ?[]const u8 {
         if (self.exc_value) |val| {
@@ -136,49 +221,328 @@ pub fn clearException() void {
     py.PyErr_Clear();
 }
 
+/// Null type, returned by raise functions so you can write:
+///   return pyoz.raiseValueError("msg");
+pub const Null = @TypeOf(null);
+
 /// Raise a Python exception with a message
-pub fn raiseException(exc_type: *PyObject, message: [*:0]const u8) void {
+pub fn raiseException(exc_type: *PyObject, comptime message: [*:0]const u8) Null {
     py.PyErr_SetString(exc_type, message);
+    return null;
 }
 
 /// Raise a ValueError with a message
-pub fn raiseValueError(message: [*:0]const u8) void {
+pub fn raiseValueError(comptime message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_ValueError(), message);
+    return null;
 }
 
 /// Raise a TypeError with a message
-pub fn raiseTypeError(message: [*:0]const u8) void {
+pub fn raiseTypeError(comptime message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_TypeError(), message);
+    return null;
 }
 
 /// Raise a RuntimeError with a message
-pub fn raiseRuntimeError(message: [*:0]const u8) void {
+pub fn raiseRuntimeError(comptime message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_RuntimeError(), message);
+    return null;
 }
 
 /// Raise a KeyError with a message
-pub fn raiseKeyError(message: [*:0]const u8) void {
+pub fn raiseKeyError(comptime message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_KeyError(), message);
+    return null;
 }
 
 /// Raise an IndexError with a message
-pub fn raiseIndexError(message: [*:0]const u8) void {
+pub fn raiseIndexError(comptime message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_IndexError(), message);
+    return null;
+}
+
+/// Raise an AttributeError with a message
+pub fn raiseAttributeError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_AttributeError(), message);
+    return null;
+}
+
+/// Raise a MemoryError with a message
+pub fn raiseMemoryError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_MemoryError(), message);
+    return null;
+}
+
+/// Raise an OSError with a message
+pub fn raiseOSError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_OSError(), message);
+    return null;
+}
+
+/// Raise a NotImplementedError with a message
+pub fn raiseNotImplementedError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_NotImplementedError(), message);
+    return null;
+}
+
+/// Raise an OverflowError with a message
+pub fn raiseOverflowError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_OverflowError(), message);
+    return null;
+}
+
+/// Raise a ZeroDivisionError with a message
+pub fn raiseZeroDivisionError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_ZeroDivisionError(), message);
+    return null;
+}
+
+/// Raise a FileNotFoundError with a message
+pub fn raiseFileNotFoundError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_FileNotFoundError(), message);
+    return null;
+}
+
+/// Raise a PermissionError with a message
+pub fn raisePermissionError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_PermissionError(), message);
+    return null;
+}
+
+/// Raise a TimeoutError with a message
+pub fn raiseTimeoutError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_TimeoutError(), message);
+    return null;
+}
+
+/// Raise a ConnectionError with a message
+pub fn raiseConnectionError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_ConnectionError(), message);
+    return null;
+}
+
+/// Raise an EOFError with a message
+pub fn raiseEOFError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_EOFError(), message);
+    return null;
+}
+
+/// Raise an ImportError with a message
+pub fn raiseImportError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_ImportError(), message);
+    return null;
+}
+
+/// Raise a StopIteration
+pub fn raiseStopIteration() Null {
+    py.PyErr_SetString(py.PyExc_StopIteration(), "");
+    return null;
+}
+
+/// Raise a SystemError with a message
+pub fn raiseSystemError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_SystemError(), message);
+    return null;
+}
+
+/// Raise a BufferError with a message
+pub fn raiseBufferError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_BufferError(), message);
+    return null;
+}
+
+/// Raise an ArithmeticError with a message
+pub fn raiseArithmeticError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_ArithmeticError(), message);
+    return null;
+}
+
+/// Raise a RecursionError with a message
+pub fn raiseRecursionError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_RecursionError(), message);
+    return null;
+}
+
+/// Raise an AssertionError with a message
+pub fn raiseAssertionError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_AssertionError(), message);
+    return null;
+}
+
+/// Raise a FloatingPointError with a message
+pub fn raiseFloatingPointError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_FloatingPointError(), message);
+    return null;
+}
+
+/// Raise a LookupError with a message
+pub fn raiseLookupError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_LookupError(), message);
+    return null;
+}
+
+/// Raise a NameError with a message
+pub fn raiseNameError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_NameError(), message);
+    return null;
+}
+
+/// Raise an UnboundLocalError with a message
+pub fn raiseUnboundLocalError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_UnboundLocalError(), message);
+    return null;
+}
+
+/// Raise a ReferenceError with a message
+pub fn raiseReferenceError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_ReferenceError(), message);
+    return null;
+}
+
+/// Raise a StopAsyncIteration
+pub fn raiseStopAsyncIteration() Null {
+    py.PyErr_SetString(py.PyExc_StopAsyncIteration(), "");
+    return null;
+}
+
+/// Raise a SyntaxError with a message
+pub fn raiseSyntaxError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_SyntaxError(), message);
+    return null;
+}
+
+/// Raise a UnicodeError with a message
+pub fn raiseUnicodeError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_UnicodeError(), message);
+    return null;
+}
+
+/// Raise a ModuleNotFoundError with a message
+pub fn raiseModuleNotFoundError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_ModuleNotFoundError(), message);
+    return null;
+}
+
+/// Raise a BlockingIOError with a message
+pub fn raiseBlockingIOError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_BlockingIOError(), message);
+    return null;
+}
+
+/// Raise a BrokenPipeError with a message
+pub fn raiseBrokenPipeError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_BrokenPipeError(), message);
+    return null;
+}
+
+/// Raise a ChildProcessError with a message
+pub fn raiseChildProcessError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_ChildProcessError(), message);
+    return null;
+}
+
+/// Raise a ConnectionAbortedError with a message
+pub fn raiseConnectionAbortedError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_ConnectionAbortedError(), message);
+    return null;
+}
+
+/// Raise a ConnectionRefusedError with a message
+pub fn raiseConnectionRefusedError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_ConnectionRefusedError(), message);
+    return null;
+}
+
+/// Raise a ConnectionResetError with a message
+pub fn raiseConnectionResetError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_ConnectionResetError(), message);
+    return null;
+}
+
+/// Raise a FileExistsError with a message
+pub fn raiseFileExistsError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_FileExistsError(), message);
+    return null;
+}
+
+/// Raise an InterruptedError with a message
+pub fn raiseInterruptedError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_InterruptedError(), message);
+    return null;
+}
+
+/// Raise an IsADirectoryError with a message
+pub fn raiseIsADirectoryError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_IsADirectoryError(), message);
+    return null;
+}
+
+/// Raise a NotADirectoryError with a message
+pub fn raiseNotADirectoryError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_NotADirectoryError(), message);
+    return null;
+}
+
+/// Raise a ProcessLookupError with a message
+pub fn raiseProcessLookupError(comptime message: [*:0]const u8) Null {
+    py.PyErr_SetString(py.PyExc_ProcessLookupError(), message);
+    return null;
 }
 
 /// Standard Python exception types for use as bases
 pub const PyExc = struct {
+    // Base
+    pub fn BaseException() *PyObject {
+        return py.PyExc_BaseException();
+    }
     pub fn Exception() *PyObject {
         return py.PyExc_Exception();
     }
-    pub fn TypeError() *PyObject {
-        return py.PyExc_TypeError();
+    pub fn GeneratorExit() *PyObject {
+        return py.PyExc_GeneratorExit();
     }
-    pub fn ValueError() *PyObject {
-        return py.PyExc_ValueError();
+    pub fn KeyboardInterrupt() *PyObject {
+        return py.PyExc_KeyboardInterrupt();
     }
-    pub fn RuntimeError() *PyObject {
-        return py.PyExc_RuntimeError();
+    pub fn SystemExit() *PyObject {
+        return py.PyExc_SystemExit();
+    }
+    // ArithmeticError hierarchy
+    pub fn ArithmeticError() *PyObject {
+        return py.PyExc_ArithmeticError();
+    }
+    pub fn FloatingPointError() *PyObject {
+        return py.PyExc_FloatingPointError();
+    }
+    pub fn OverflowError() *PyObject {
+        return py.PyExc_OverflowError();
+    }
+    pub fn ZeroDivisionError() *PyObject {
+        return py.PyExc_ZeroDivisionError();
+    }
+    // Simple Exception subclasses
+    pub fn AssertionError() *PyObject {
+        return py.PyExc_AssertionError();
+    }
+    pub fn AttributeError() *PyObject {
+        return py.PyExc_AttributeError();
+    }
+    pub fn BufferError() *PyObject {
+        return py.PyExc_BufferError();
+    }
+    pub fn EOFError() *PyObject {
+        return py.PyExc_EOFError();
+    }
+    // ImportError hierarchy
+    pub fn ImportError() *PyObject {
+        return py.PyExc_ImportError();
+    }
+    pub fn ModuleNotFoundError() *PyObject {
+        return py.PyExc_ModuleNotFoundError();
+    }
+    // LookupError hierarchy
+    pub fn LookupError() *PyObject {
+        return py.PyExc_LookupError();
     }
     pub fn IndexError() *PyObject {
         return py.PyExc_IndexError();
@@ -186,35 +550,281 @@ pub const PyExc = struct {
     pub fn KeyError() *PyObject {
         return py.PyExc_KeyError();
     }
-    pub fn AttributeError() *PyObject {
-        return py.PyExc_AttributeError();
+    pub fn MemoryError() *PyObject {
+        return py.PyExc_MemoryError();
+    }
+    // NameError hierarchy
+    pub fn NameError() *PyObject {
+        return py.PyExc_NameError();
+    }
+    pub fn UnboundLocalError() *PyObject {
+        return py.PyExc_UnboundLocalError();
+    }
+    // OSError hierarchy
+    pub fn OSError() *PyObject {
+        return py.PyExc_OSError();
+    }
+    pub fn BlockingIOError() *PyObject {
+        return py.PyExc_BlockingIOError();
+    }
+    pub fn ChildProcessError() *PyObject {
+        return py.PyExc_ChildProcessError();
+    }
+    pub fn ConnectionError() *PyObject {
+        return py.PyExc_ConnectionError();
+    }
+    pub fn BrokenPipeError() *PyObject {
+        return py.PyExc_BrokenPipeError();
+    }
+    pub fn ConnectionAbortedError() *PyObject {
+        return py.PyExc_ConnectionAbortedError();
+    }
+    pub fn ConnectionRefusedError() *PyObject {
+        return py.PyExc_ConnectionRefusedError();
+    }
+    pub fn ConnectionResetError() *PyObject {
+        return py.PyExc_ConnectionResetError();
+    }
+    pub fn FileExistsError() *PyObject {
+        return py.PyExc_FileExistsError();
+    }
+    pub fn FileNotFoundError() *PyObject {
+        return py.PyExc_FileNotFoundError();
+    }
+    pub fn InterruptedError() *PyObject {
+        return py.PyExc_InterruptedError();
+    }
+    pub fn IsADirectoryError() *PyObject {
+        return py.PyExc_IsADirectoryError();
+    }
+    pub fn NotADirectoryError() *PyObject {
+        return py.PyExc_NotADirectoryError();
+    }
+    pub fn PermissionError() *PyObject {
+        return py.PyExc_PermissionError();
+    }
+    pub fn ProcessLookupError() *PyObject {
+        return py.PyExc_ProcessLookupError();
+    }
+    pub fn TimeoutError() *PyObject {
+        return py.PyExc_TimeoutError();
+    }
+    pub fn ReferenceError() *PyObject {
+        return py.PyExc_ReferenceError();
+    }
+    // RuntimeError hierarchy
+    pub fn RuntimeError() *PyObject {
+        return py.PyExc_RuntimeError();
+    }
+    pub fn NotImplementedError() *PyObject {
+        return py.PyExc_NotImplementedError();
+    }
+    pub fn RecursionError() *PyObject {
+        return py.PyExc_RecursionError();
+    }
+    pub fn StopAsyncIteration() *PyObject {
+        return py.PyExc_StopAsyncIteration();
     }
     pub fn StopIteration() *PyObject {
         return py.PyExc_StopIteration();
+    }
+    // SyntaxError hierarchy
+    pub fn SyntaxError() *PyObject {
+        return py.PyExc_SyntaxError();
+    }
+    pub fn IndentationError() *PyObject {
+        return py.PyExc_IndentationError();
+    }
+    pub fn TabError() *PyObject {
+        return py.PyExc_TabError();
+    }
+    pub fn SystemError() *PyObject {
+        return py.PyExc_SystemError();
+    }
+    pub fn TypeError() *PyObject {
+        return py.PyExc_TypeError();
+    }
+    // ValueError hierarchy
+    pub fn ValueError() *PyObject {
+        return py.PyExc_ValueError();
+    }
+    pub fn UnicodeError() *PyObject {
+        return py.PyExc_UnicodeError();
+    }
+    // Warning hierarchy
+    pub fn Warning() *PyObject {
+        return py.PyExc_Warning();
+    }
+    pub fn BytesWarning() *PyObject {
+        return py.PyExc_BytesWarning();
+    }
+    pub fn DeprecationWarning() *PyObject {
+        return py.PyExc_DeprecationWarning();
+    }
+    pub fn FutureWarning() *PyObject {
+        return py.PyExc_FutureWarning();
+    }
+    pub fn ImportWarning() *PyObject {
+        return py.PyExc_ImportWarning();
+    }
+    pub fn PendingDeprecationWarning() *PyObject {
+        return py.PyExc_PendingDeprecationWarning();
+    }
+    pub fn ResourceWarning() *PyObject {
+        return py.PyExc_ResourceWarning();
+    }
+    pub fn RuntimeWarning() *PyObject {
+        return py.PyExc_RuntimeWarning();
+    }
+    pub fn SyntaxWarning() *PyObject {
+        return py.PyExc_SyntaxWarning();
+    }
+    pub fn UnicodeWarning() *PyObject {
+        return py.PyExc_UnicodeWarning();
+    }
+    pub fn UserWarning() *PyObject {
+        return py.PyExc_UserWarning();
     }
 };
 
 /// Base exception type enum for compile-time specification
 pub const ExcBase = enum {
+    // BaseException level
+    BaseException,
     Exception,
-    TypeError,
-    ValueError,
-    RuntimeError,
+    GeneratorExit,
+    KeyboardInterrupt,
+    SystemExit,
+    // ArithmeticError hierarchy
+    ArithmeticError,
+    FloatingPointError,
+    OverflowError,
+    ZeroDivisionError,
+    // Simple Exception subclasses
+    AssertionError,
+    AttributeError,
+    BufferError,
+    EOFError,
+    // ImportError hierarchy
+    ImportError,
+    ModuleNotFoundError,
+    // LookupError hierarchy
+    LookupError,
     IndexError,
     KeyError,
-    AttributeError,
+    MemoryError,
+    // NameError hierarchy
+    NameError,
+    UnboundLocalError,
+    // OSError hierarchy
+    OSError,
+    BlockingIOError,
+    ChildProcessError,
+    ConnectionError,
+    BrokenPipeError,
+    ConnectionAbortedError,
+    ConnectionRefusedError,
+    ConnectionResetError,
+    FileExistsError,
+    FileNotFoundError,
+    InterruptedError,
+    IsADirectoryError,
+    NotADirectoryError,
+    PermissionError,
+    ProcessLookupError,
+    TimeoutError,
+    ReferenceError,
+    // RuntimeError hierarchy
+    RuntimeError,
+    NotImplementedError,
+    RecursionError,
+    StopAsyncIteration,
     StopIteration,
+    // SyntaxError hierarchy
+    SyntaxError,
+    IndentationError,
+    TabError,
+    SystemError,
+    TypeError,
+    // ValueError hierarchy
+    ValueError,
+    UnicodeError,
+    // Warning hierarchy
+    Warning,
+    BytesWarning,
+    DeprecationWarning,
+    FutureWarning,
+    ImportWarning,
+    PendingDeprecationWarning,
+    ResourceWarning,
+    RuntimeWarning,
+    SyntaxWarning,
+    UnicodeWarning,
+    UserWarning,
 
     pub fn toPyObject(self: ExcBase) *PyObject {
         return switch (self) {
+            .BaseException => py.PyExc_BaseException(),
             .Exception => py.PyExc_Exception(),
-            .TypeError => py.PyExc_TypeError(),
-            .ValueError => py.PyExc_ValueError(),
-            .RuntimeError => py.PyExc_RuntimeError(),
+            .GeneratorExit => py.PyExc_GeneratorExit(),
+            .KeyboardInterrupt => py.PyExc_KeyboardInterrupt(),
+            .SystemExit => py.PyExc_SystemExit(),
+            .ArithmeticError => py.PyExc_ArithmeticError(),
+            .FloatingPointError => py.PyExc_FloatingPointError(),
+            .OverflowError => py.PyExc_OverflowError(),
+            .ZeroDivisionError => py.PyExc_ZeroDivisionError(),
+            .AssertionError => py.PyExc_AssertionError(),
+            .AttributeError => py.PyExc_AttributeError(),
+            .BufferError => py.PyExc_BufferError(),
+            .EOFError => py.PyExc_EOFError(),
+            .ImportError => py.PyExc_ImportError(),
+            .ModuleNotFoundError => py.PyExc_ModuleNotFoundError(),
+            .LookupError => py.PyExc_LookupError(),
             .IndexError => py.PyExc_IndexError(),
             .KeyError => py.PyExc_KeyError(),
-            .AttributeError => py.PyExc_AttributeError(),
+            .MemoryError => py.PyExc_MemoryError(),
+            .NameError => py.PyExc_NameError(),
+            .UnboundLocalError => py.PyExc_UnboundLocalError(),
+            .OSError => py.PyExc_OSError(),
+            .BlockingIOError => py.PyExc_BlockingIOError(),
+            .ChildProcessError => py.PyExc_ChildProcessError(),
+            .ConnectionError => py.PyExc_ConnectionError(),
+            .BrokenPipeError => py.PyExc_BrokenPipeError(),
+            .ConnectionAbortedError => py.PyExc_ConnectionAbortedError(),
+            .ConnectionRefusedError => py.PyExc_ConnectionRefusedError(),
+            .ConnectionResetError => py.PyExc_ConnectionResetError(),
+            .FileExistsError => py.PyExc_FileExistsError(),
+            .FileNotFoundError => py.PyExc_FileNotFoundError(),
+            .InterruptedError => py.PyExc_InterruptedError(),
+            .IsADirectoryError => py.PyExc_IsADirectoryError(),
+            .NotADirectoryError => py.PyExc_NotADirectoryError(),
+            .PermissionError => py.PyExc_PermissionError(),
+            .ProcessLookupError => py.PyExc_ProcessLookupError(),
+            .TimeoutError => py.PyExc_TimeoutError(),
+            .ReferenceError => py.PyExc_ReferenceError(),
+            .RuntimeError => py.PyExc_RuntimeError(),
+            .NotImplementedError => py.PyExc_NotImplementedError(),
+            .RecursionError => py.PyExc_RecursionError(),
+            .StopAsyncIteration => py.PyExc_StopAsyncIteration(),
             .StopIteration => py.PyExc_StopIteration(),
+            .SyntaxError => py.PyExc_SyntaxError(),
+            .IndentationError => py.PyExc_IndentationError(),
+            .TabError => py.PyExc_TabError(),
+            .SystemError => py.PyExc_SystemError(),
+            .TypeError => py.PyExc_TypeError(),
+            .ValueError => py.PyExc_ValueError(),
+            .UnicodeError => py.PyExc_UnicodeError(),
+            .Warning => py.PyExc_Warning(),
+            .BytesWarning => py.PyExc_BytesWarning(),
+            .DeprecationWarning => py.PyExc_DeprecationWarning(),
+            .FutureWarning => py.PyExc_FutureWarning(),
+            .ImportWarning => py.PyExc_ImportWarning(),
+            .PendingDeprecationWarning => py.PyExc_PendingDeprecationWarning(),
+            .ResourceWarning => py.PyExc_ResourceWarning(),
+            .RuntimeWarning => py.PyExc_RuntimeWarning(),
+            .SyntaxWarning => py.PyExc_SyntaxWarning(),
+            .UnicodeWarning => py.PyExc_UnicodeWarning(),
+            .UserWarning => py.PyExc_UserWarning(),
         };
     }
 };
@@ -269,11 +879,12 @@ pub fn exception(comptime name: [*:0]const u8, comptime opts: anytype) Exception
 }
 
 /// Helper to raise a custom exception
-pub fn raise(exc: *const ExceptionDef, msg: [*:0]const u8) void {
+pub fn raise(exc: *const ExceptionDef, comptime msg: [*:0]const u8) Null {
     if (exc.exception_type) |exc_type| {
         py.PyErr_SetString(exc_type, msg);
     } else {
         // Fallback to RuntimeError if exception wasn't initialized
         py.PyErr_SetString(py.PyExc_RuntimeError(), msg);
     }
+    return null;
 }

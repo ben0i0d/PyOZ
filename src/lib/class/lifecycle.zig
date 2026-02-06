@@ -156,6 +156,11 @@ pub fn LifecycleBuilder(
             const obj = self_obj orelse return;
             const self: *PyWrapper = @ptrCast(@alignCast(obj));
 
+            // Call user's __del__ if defined (before any cleanup)
+            if (@hasDecl(T, "__del__")) {
+                T.__del__(self.getData());
+            }
+
             const obj_type = py.Py_TYPE(obj);
 
             if (has_weakref_support) {

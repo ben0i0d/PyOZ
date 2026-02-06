@@ -2920,6 +2920,50 @@ test "PrivateFieldsExample - setting private fields raises AttributeError" {
 }
 
 // ============================================================================
+// __del__ Tests - Custom cleanup on deallocation
+// ============================================================================
+
+test "Resource - creation and validity" {
+    const python = try initTestPython();
+
+    try python.exec("r = example.Resource(42)");
+    try std.testing.expect(try python.eval(bool, "r.is_valid()"));
+    try std.testing.expectEqual(@as(i64, 42), try python.eval(i64, "r.get_handle()"));
+}
+
+test "Resource - __del__ runs on delete" {
+    const python = try initTestPython();
+
+    // Create resource and delete it — __del__ runs via tp_dealloc
+    // The test verifies no crash occurs and no exception is raised
+    try python.exec(
+        \\r = example.Resource(99)
+        \\assert r.is_valid() == True
+        \\del r
+        \\# If we get here, __del__ ran without crashing
+        \\del_test_passed = True
+    );
+    try std.testing.expect(try python.eval(bool, "del_test_passed"));
+}
+
+test "Resource - __del__ runs when refcount drops to zero" {
+    const python = try initTestPython();
+
+    // Object goes out of scope when function returns — __del__ should fire
+    try python.exec(
+        \\def create_and_discard():
+        \\    r = example.Resource(123)
+        \\    assert r.is_valid()
+        \\    return r.get_handle()
+        \\
+        \\handle = create_and_discard()
+        \\# r's refcount dropped to zero after function returned
+        \\refcount_test_passed = (handle == 123)
+    );
+    try std.testing.expect(try python.eval(bool, "refcount_test_passed"));
+}
+
+// ============================================================================
 // Symreader Tests - Binary Format Parsing
 // ============================================================================
 

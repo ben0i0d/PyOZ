@@ -678,12 +678,12 @@ fn call_and_catch(callable: *pyoz.PyObject, arg: i64) i64 {
 
 /// Demonstrate raising exceptions from Zig
 fn raise_value_error(msg: []const u8) ?i64 {
-    // Create a null-terminated string for the error message
+    // For runtime messages, use PyErr_SetString directly
     var buf: [256]u8 = undefined;
     const len = @min(msg.len, 255);
     @memcpy(buf[0..len], msg[0..len]);
     buf[len] = 0;
-    pyoz.raiseValueError(@ptrCast(&buf));
+    pyoz.py.PyErr_SetString(pyoz.py.PyExc_ValueError(), @ptrCast(&buf));
     return null;
 }
 
@@ -2668,6 +2668,31 @@ const SimplePoint = struct {
     y: f64,
 };
 
+// ============================================================================
+// Resource class - demonstrates __del__ for custom cleanup
+// Simulates a C resource (file descriptor, allocated buffer, etc.)
+const Resource = struct {
+    handle: i64,
+    _freed: bool,
+
+    pub fn __new__(handle: i64) Resource {
+        return .{ .handle = handle, ._freed = false };
+    }
+
+    pub fn __del__(self: *Resource) void {
+        self._freed = true;
+        self.handle = -1;
+    }
+
+    pub fn is_valid(self: *const Resource) bool {
+        return self.handle >= 0 and !self._freed;
+    }
+
+    pub fn get_handle(self: *const Resource) i64 {
+        return self.handle;
+    }
+};
+
 // Module Definition
 // ============================================================================
 
@@ -2824,6 +2849,7 @@ const Example = pyoz.module(.{
         pyoz.class("Temperature", Temperature),
         pyoz.class("PrivateFieldsExample", PrivateFieldsExample),
         pyoz.class("SimplePoint", SimplePoint),
+        pyoz.class("Resource", Resource),
     },
     .exceptions = &.{
         pyoz.exception("ValidationError", .{ .doc = "Raised when validation fails", .base = .ValueError }),
