@@ -4,16 +4,24 @@ This guide walks you through creating your first PyOZ module using the `pyoz` CL
 
 ## Prerequisites
 
-### Option 1: Download Prebuilt Binaries
+### Option 1: Install from PyPI (Recommended)
+
+```bash
+pip install pyoz
+```
+
+This installs the `pyoz` CLI with prebuilt binaries for all major platforms.
+
+### Option 2: Download Prebuilt Binaries
 
 Download the latest `pyoz` binary for your platform from the [GitHub Releases](https://github.com/dzonerzy/PyOZ/releases) page and add it to your PATH.
 
-### Option 2: Build from Source
+### Option 3: Build from Source
 
 ```bash
 git clone https://github.com/dzonerzy/PyOZ.git
 cd PyOZ
-zig build
+zig build cli
 ```
 
 The `pyoz` binary will be in `zig-out/bin/`. Add it to your PATH or use the full path.

@@ -72,9 +72,8 @@ const Point = struct {
         return .{ .x = self.x + other.x, .y = self.y + other.y };
     }
 
-    pub fn __repr__(self: *const Point) []const u8 {
-        _ = self;
-        return "Point(...)";
+    pub fn __repr__(self: *const Point, buf: []u8) []const u8 {
+        return std.fmt.bufPrint(buf, "Point(x={d}, y={d})", .{ self.x, self.y }) catch "Point(?)";
     }
 
     pub fn origin() Point {

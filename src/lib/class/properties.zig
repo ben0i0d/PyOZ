@@ -55,6 +55,8 @@ pub fn PropertiesBuilder(comptime T: type, comptime Parent: type, comptime class
             var count: usize = 0;
             for (type_decls) |decl| {
                 if (decl.name.len > 4 and std.mem.startsWith(u8, decl.name, "get_")) {
+                    // Must be a function, not a constant (e.g. get_error__doc__)
+                    if (@typeInfo(@TypeOf(@field(T, decl.name))) != .@"fn") continue;
                     const prop_name = decl.name[4..];
                     var is_field = false;
                     for (fields) |field| {
@@ -147,6 +149,8 @@ pub fn PropertiesBuilder(comptime T: type, comptime Parent: type, comptime class
             const type_decls = @typeInfo(T).@"struct".decls;
             for (type_decls) |decl| {
                 if (decl.name.len > 4 and std.mem.startsWith(u8, decl.name, "get_")) {
+                    // Must be a function, not a constant (e.g. get_error__doc__)
+                    if (@typeInfo(@TypeOf(@field(T, decl.name))) != .@"fn") continue;
                     const prop_name = decl.name[4..];
                     var is_field = false;
                     for (fields) |field| {

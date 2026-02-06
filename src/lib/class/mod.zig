@@ -29,6 +29,172 @@ const properties_mod = @import("properties.zig");
 const methods_mod = @import("methods.zig");
 const gc_protocol = @import("gc.zig");
 
+/// Build a comptime list of dunder names that are wired to protocol slots
+/// for type T. MethodBuilder uses this to exclude them from the method table.
+fn buildSlotDunderList(comptime T: type, comptime num: anytype, comptime seq: anytype, comptime map: anytype, comptime buf: anytype, comptime gc: anytype) []const []const u8 {
+    comptime {
+        var names: [80][]const u8 = undefined;
+        var count: usize = 0;
+
+        // Lifecycle — always handled by tp_new / tp_dealloc
+        if (@hasDecl(T, "__new__")) {
+            names[count] = "__new__";
+            count += 1;
+        }
+        if (@hasDecl(T, "__del__")) {
+            names[count] = "__del__";
+            count += 1;
+        }
+
+        // Repr / hash — tp_repr, tp_str, tp_hash
+        if (@hasDecl(T, "__repr__")) {
+            names[count] = "__repr__";
+            count += 1;
+        }
+        if (@hasDecl(T, "__str__")) {
+            names[count] = "__str__";
+            count += 1;
+        }
+        if (@hasDecl(T, "__hash__")) {
+            names[count] = "__hash__";
+            count += 1;
+        }
+
+        // Comparison — tp_richcompare
+        for ([_][]const u8{ "__eq__", "__ne__", "__lt__", "__le__", "__gt__", "__ge__" }) |n| {
+            if (@hasDecl(T, n)) {
+                names[count] = n;
+                count += 1;
+            }
+        }
+
+        // Number protocol — all ops if any number method is present
+        if (num.hasNumberMethods()) {
+            for ([_][]const u8{
+                "__add__",       "__sub__",       "__mul__",
+                "__truediv__",   "__floordiv__",  "__mod__",
+                "__divmod__",    "__pow__",       "__matmul__",
+                "__lshift__",    "__rshift__",    "__and__",
+                "__or__",        "__xor__",       "__neg__",
+                "__pos__",       "__abs__",       "__invert__",
+                "__int__",       "__float__",     "__index__",
+                "__bool__",      "__complex__",   "__iadd__",
+                "__isub__",      "__imul__",      "__itruediv__",
+                "__ifloordiv__", "__imod__",      "__ipow__",
+                "__imatmul__",   "__ilshift__",   "__irshift__",
+                "__iand__",      "__ior__",       "__ixor__",
+                "__radd__",      "__rsub__",      "__rmul__",
+                "__rtruediv__",  "__rfloordiv__", "__rmod__",
+                "__rdivmod__",   "__rpow__",      "__rmatmul__",
+                "__rlshift__",   "__rrshift__",   "__rand__",
+                "__ror__",       "__rxor__",
+            }) |n| {
+                if (@hasDecl(T, n)) {
+                    names[count] = n;
+                    count += 1;
+                }
+            }
+        }
+
+        // Sequence protocol
+        if (seq.hasSequenceMethods()) {
+            for ([_][]const u8{ "__len__", "__getitem__", "__setitem__", "__delitem__", "__contains__" }) |n| {
+                if (@hasDecl(T, n)) {
+                    names[count] = n;
+                    count += 1;
+                }
+            }
+        }
+
+        // Mapping protocol
+        if (map.hasMappingMethods()) {
+            for ([_][]const u8{ "__getitem__", "__setitem__", "__delitem__", "__len__" }) |n| {
+                if (@hasDecl(T, n)) {
+                    // Avoid duplicates from sequence protocol
+                    var dup = false;
+                    for (names[0..count]) |existing| {
+                        if (std.mem.eql(u8, existing, n)) {
+                            dup = true;
+                            break;
+                        }
+                    }
+                    if (!dup) {
+                        names[count] = n;
+                        count += 1;
+                    }
+                }
+            }
+        }
+
+        // Iterator — tp_iter, tp_iternext
+        if (@hasDecl(T, "__iter__")) {
+            names[count] = "__iter__";
+            count += 1;
+        }
+        if (@hasDecl(T, "__next__")) {
+            names[count] = "__next__";
+            count += 1;
+        }
+
+        // Buffer — bf_getbuffer
+        if (buf.hasBufferProtocol()) {
+            if (@hasDecl(T, "__buffer__")) {
+                names[count] = "__buffer__";
+                count += 1;
+            }
+        }
+
+        // Descriptor — tp_descr_get, tp_descr_set
+        if (@hasDecl(T, "__get__")) {
+            names[count] = "__get__";
+            count += 1;
+        }
+        if (@hasDecl(T, "__set__")) {
+            names[count] = "__set__";
+            count += 1;
+        }
+        if (@hasDecl(T, "__delete__")) {
+            names[count] = "__delete__";
+            count += 1;
+        }
+
+        // Callable — tp_call
+        if (@hasDecl(T, "__call__")) {
+            names[count] = "__call__";
+            count += 1;
+        }
+
+        // Attribute access — tp_getattro, tp_setattro
+        if (@hasDecl(T, "__getattr__")) {
+            names[count] = "__getattr__";
+            count += 1;
+        }
+        if (@hasDecl(T, "__setattr__")) {
+            names[count] = "__setattr__";
+            count += 1;
+        }
+        if (@hasDecl(T, "__delattr__")) {
+            names[count] = "__delattr__";
+            count += 1;
+        }
+
+        // GC — tp_traverse, tp_clear
+        if (gc.hasGCSupport()) {
+            if (@hasDecl(T, "__traverse__")) {
+                names[count] = "__traverse__";
+                count += 1;
+            }
+            if (@hasDecl(T, "__clear__")) {
+                names[count] = "__clear__";
+                count += 1;
+            }
+        }
+
+        const final: [count][]const u8 = names[0..count].*;
+        return &final;
+    }
+}
+
 /// Check if a field name indicates a private field (starts with underscore)
 fn isPrivateField(comptime field_name: []const u8) bool {
     return field_name.len > 0 and field_name[0] == '_';
@@ -190,8 +356,11 @@ fn generateClass(comptime name: [*:0]const u8, comptime T: type, comptime class_
         const attr = attributes_mod.AttributeProtocol(name, T, Self, class_infos);
         const call = callable_mod.CallableProtocol(name, T, Self, class_infos);
         const props = properties_mod.PropertiesBuilder(T, Self, class_infos);
-        const meths = methods_mod.MethodBuilder(name, T, PyWrapper, class_infos);
         const gc = gc_protocol.GCBuilder(T, PyWrapper);
+        // Build the list of dunder names handled by protocol slots for this type.
+        // MethodBuilder uses this to exclude them from the regular method table.
+        const slot_handled_dunders = buildSlotDunderList(T, num, seq, map, buf, gc);
+        const meths = methods_mod.MethodBuilder(name, T, PyWrapper, class_infos, slot_handled_dunders);
 
         // Helper function to get type object pointer (for protocols that need it)
         pub fn getTypeObjectPtr() *py.PyTypeObject {

@@ -1,8 +1,20 @@
 # Installation
 
+## Installing PyOZ CLI
+
+The easiest way to get the `pyoz` CLI:
+
+```bash
+pip install pyoz
+```
+
+This installs prebuilt binaries for Linux (x86_64/aarch64), macOS (x86_64/arm64), and Windows (x86_64/arm64). No compilation needed.
+
+Alternatively, download a binary from [GitHub Releases](https://github.com/dzonerzy/PyOZ/releases) or build from source with `zig build cli`.
+
 ## Requirements
 
-- **Zig** 0.13.0 or later
+- **Zig** 0.15.0 or later
 - **Python** 3.8 or later (with development headers)
 
 !!! note "Python Version Support"

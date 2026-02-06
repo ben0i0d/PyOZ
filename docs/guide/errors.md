@@ -127,9 +127,32 @@ Return `?T` (optional) to indicate errors via `null`:
 fn safe_sqrt(x: f64) ?f64 {
     if (x < 0) {
         pyoz.raiseValueError("Cannot take sqrt of negative number");
-        return null;  // Raises exception
+        return null;
     }
     return @sqrt(x);
+}
+```
+
+The raise functions return `Null` (Zig's null literal type), so you can combine them into a one-liner:
+
+```zig
+fn safe_sqrt(x: f64) ?f64 {
+    if (x < 0) return pyoz.raiseValueError("Cannot take sqrt of negative number");
+    return @sqrt(x);
+}
+```
+
+This works with any optional return type (`?i64`, `?f64`, `?[]const u8`, `?*pyoz.PyObject`, etc.).
+
+When your function returns a non-optional type (e.g., `c_int`), you need to discard the return value and return separately:
+
+```zig
+fn validate(n: i64) c_int {
+    if (n < 0) {
+        _ = pyoz.raiseValueError("Value must be non-negative");
+        return -1;
+    }
+    return 0;
 }
 ```
 

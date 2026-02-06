@@ -49,12 +49,20 @@ def sha256_digest(data):
     return base64.urlsafe_b64encode(h).rstrip(b"=").decode("ascii")
 
 
+def read_readme():
+    """Read the README.md file for inclusion in wheel metadata."""
+    readme_path = os.path.join(os.path.dirname(__file__), "README.md")
+    with open(readme_path, "r") as f:
+        return f.read()
+
+
 def build_wheel(binary_path, binary_name, platform_tag, version, dist_dir):
     """Build a single platform-specific wheel."""
     wheel_name = f"pyoz-{version}-py3-none-{platform_tag}.whl"
     wheel_path = os.path.join(dist_dir, wheel_name)
 
     dist_info = f"pyoz-{version}.dist-info"
+    readme_content = read_readme()
 
     with zipfile.ZipFile(wheel_path, "w", zipfile.ZIP_DEFLATED) as whl:
         # Add __init__.py
@@ -84,7 +92,7 @@ def build_wheel(binary_path, binary_name, platform_tag, version, dist_dir):
 Name: pyoz
 Version: {version}
 Summary: Python extension modules in Zig, made easy
-Home-page: https://github.com/pyozig/PyOZ
+Home-page: https://pyoz.dev
 Author: Daniele Linguaglossa
 License: MIT
 Requires-Python: >=3.8
@@ -93,7 +101,12 @@ Classifier: Intended Audience :: Developers
 Classifier: License :: OSI Approved :: MIT License
 Classifier: Programming Language :: Python :: 3
 Classifier: Topic :: Software Development :: Build Tools
-"""
+Project-URL: Documentation, https://pyoz.dev
+Project-URL: Source, https://github.com/pyozig/PyOZ
+Project-URL: Changelog, https://pyoz.dev/changelog
+Description-Content-Type: text/markdown
+
+{readme_content}"""
         whl.writestr(f"{dist_info}/METADATA", metadata)
 
         # WHEEL

@@ -806,6 +806,13 @@ pub fn module(comptime config: anytype) type {
         // Expose class types for external use
         pub const registered_classes = class_infos;
 
+        /// Class-aware converter that knows about all registered classes.
+        /// Use this instead of pyoz.Conversions when converting registered
+        /// class instances (e.g. Module.toPy(Node, my_node)).
+        pub const ClassConverter = conversion_mod.Converter(class_infos);
+        pub const toPy = ClassConverter.toPy;
+        pub const fromPy = ClassConverter.fromPy;
+
         /// Generate Python type stub (.pyi) content for this module
         /// Returns the complete stub file content as a comptime string
         pub fn getStubs() []const u8 {

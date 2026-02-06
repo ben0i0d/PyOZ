@@ -98,17 +98,41 @@ pub fn ReprProtocol(comptime name: [*:0]const u8, comptime T: type, comptime Par
         }
 
         /// Custom __repr__ - calls T.__repr__
+        /// Supports two signatures:
+        ///   fn __repr__(self: *const T, buf: []u8) []const u8  -- writes into PyOZ-provided buffer (safe)
+        ///   fn __repr__(self: *const T) []const u8             -- returns a slice directly (only safe for literals)
         pub fn py_magic_repr(self_obj: ?*py.PyObject) callconv(.c) ?*py.PyObject {
             const self: *Parent.PyWrapper = @ptrCast(@alignCast(self_obj orelse return null));
-            const result = T.__repr__(self.getDataConst());
-            return conversion.Converter(class_infos).toPy(@TypeOf(result), result);
+            const repr_fn_info = @typeInfo(@TypeOf(T.__repr__)).@"fn";
+            if (repr_fn_info.params.len == 2) {
+                // New buffered signature: fn(self, buf) -> []const u8
+                var buf: [4096]u8 = undefined;
+                const result = T.__repr__(self.getDataConst(), &buf);
+                return conversion.Converter(class_infos).toPy(@TypeOf(result), result);
+            } else {
+                // Legacy signature: fn(self) -> []const u8
+                const result = T.__repr__(self.getDataConst());
+                return conversion.Converter(class_infos).toPy(@TypeOf(result), result);
+            }
         }
 
         /// Custom __str__ - calls T.__str__
+        /// Supports two signatures:
+        ///   fn __str__(self: *const T, buf: []u8) []const u8  -- writes into PyOZ-provided buffer (safe)
+        ///   fn __str__(self: *const T) []const u8             -- returns a slice directly (only safe for literals)
         pub fn py_magic_str(self_obj: ?*py.PyObject) callconv(.c) ?*py.PyObject {
             const self: *Parent.PyWrapper = @ptrCast(@alignCast(self_obj orelse return null));
-            const result = T.__str__(self.getDataConst());
-            return conversion.Converter(class_infos).toPy(@TypeOf(result), result);
+            const str_fn_info = @typeInfo(@TypeOf(T.__str__)).@"fn";
+            if (str_fn_info.params.len == 2) {
+                // New buffered signature: fn(self, buf) -> []const u8
+                var buf: [4096]u8 = undefined;
+                const result = T.__str__(self.getDataConst(), &buf);
+                return conversion.Converter(class_infos).toPy(@TypeOf(result), result);
+            } else {
+                // Legacy signature: fn(self) -> []const u8
+                const result = T.__str__(self.getDataConst());
+                return conversion.Converter(class_infos).toPy(@TypeOf(result), result);
+            }
         }
 
         /// Custom __hash__ - calls T.__hash__

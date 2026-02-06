@@ -11,7 +11,7 @@ const class_mod = @import("mod.zig");
 const ClassInfo = class_mod.ClassInfo;
 
 /// Build method wrappers for a given type
-pub fn MethodBuilder(comptime _: [*:0]const u8, comptime T: type, comptime PyWrapper: type, comptime class_infos: []const ClassInfo) type {
+pub fn MethodBuilder(comptime _: [*:0]const u8, comptime T: type, comptime PyWrapper: type, comptime class_infos: []const ClassInfo, comptime slot_dunders: []const []const u8) type {
     const struct_info = @typeInfo(T).@"struct";
     const decls = struct_info.decls;
 
@@ -21,6 +21,23 @@ pub fn MethodBuilder(comptime _: [*:0]const u8, comptime T: type, comptime PyWra
         // ====================================================================
         // Method counting and detection
         // ====================================================================
+
+        /// Check if a declaration is handled by a protocol slot or is a
+        /// non-function dunder (constant/type). The slot_dunders list is
+        /// provided by mod.zig and contains only the dunders T actually
+        /// declares — typically 5–15 items, so this never hits branch-quota
+        /// limits. Other dunders like __enter__, __exit__, __missing__ pass
+        /// through as regular methods.
+        fn isSlotDunder(comptime decl_name: []const u8) bool {
+            @setEvalBranchQuota(5000);
+            // Non-function declarations (__doc__, __base__, __features__, etc.)
+            if (@hasDecl(T, decl_name) and @typeInfo(@TypeOf(@field(T, decl_name))) != .@"fn")
+                return true;
+            inline for (slot_dunders) |d| {
+                if (comptime std.mem.eql(u8, decl_name, d)) return true;
+            }
+            return false;
+        }
 
         pub fn countMethods() usize {
             var count: usize = 0;
@@ -53,6 +70,8 @@ pub fn MethodBuilder(comptime _: [*:0]const u8, comptime T: type, comptime PyWra
         }
 
         fn isInstanceMethod(comptime decl_name: []const u8) bool {
+            // Skip dunders handled by protocol slots
+            if (isSlotDunder(decl_name)) return false;
             // Check if this is a public function that takes self
             if (!@hasDecl(T, decl_name)) return false;
             const decl = @field(T, decl_name);
@@ -78,6 +97,8 @@ pub fn MethodBuilder(comptime _: [*:0]const u8, comptime T: type, comptime PyWra
         }
 
         fn isStaticMethod(comptime decl_name: []const u8) bool {
+            // Skip dunders handled by protocol slots
+            if (isSlotDunder(decl_name)) return false;
             // Check if this is a public function that does NOT take self or cls
             if (!@hasDecl(T, decl_name)) return false;
 
@@ -109,6 +130,8 @@ pub fn MethodBuilder(comptime _: [*:0]const u8, comptime T: type, comptime PyWra
         }
 
         fn isClassMethod(comptime decl_name: []const u8) bool {
+            // Skip dunders handled by protocol slots
+            if (isSlotDunder(decl_name)) return false;
             // Class methods have `comptime cls: type` as first parameter
             if (!@hasDecl(T, decl_name)) return false;
             const decl = @field(T, decl_name);
