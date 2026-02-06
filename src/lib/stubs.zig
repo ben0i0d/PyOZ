@@ -6,6 +6,11 @@
 //!
 //! Private fields: Fields starting with underscore (_) are considered private
 //! and are NOT included in generated stubs (neither as annotations nor __init__ args).
+//!
+//! User-facing conventions for stub customization (all opt-in):
+//! - `pub const method__doc__: [*:0]const u8 = "..."` — method docstring
+//! - `pub const method__returns__: []const u8 = "..."` — override return type annotation
+//! - `pub const method__params__: []const u8 = "..."` — override parameter names (comma-separated)
 
 const std = @import("std");
 
@@ -13,6 +18,62 @@ const std = @import("std");
 /// Private fields are not exposed to Python as properties or __init__ arguments
 fn isPrivateField(comptime name: []const u8) bool {
     return name.len > 0 and name[0] == '_';
+}
+
+/// Coerce a comptime string declaration to []const u8.
+/// Handles string literals (*const [N:0]u8), [*:0]const u8, and []const u8.
+fn asSlice(comptime val: anytype) []const u8 {
+    const T = @TypeOf(val);
+    if (T == []const u8) return val;
+    return std.mem.span(@as([*:0]const u8, val));
+}
+
+/// Extract the Nth parameter name from a comma-separated string.
+/// e.g., getParamName("rule_name, depth", 1) -> "depth"
+/// Falls back to "argN" if the index is out of range.
+fn getParamName(comptime names_str: []const u8, comptime idx: usize) []const u8 {
+    comptime {
+        var current_idx: usize = 0;
+        var start: usize = 0;
+        var i: usize = 0;
+
+        while (i <= names_str.len) : (i += 1) {
+            if (i == names_str.len or names_str[i] == ',') {
+                if (current_idx == idx) {
+                    // Trim whitespace
+                    var s = start;
+                    var e = i;
+                    while (s < e and names_str[s] == ' ') s += 1;
+                    while (e > s and names_str[e - 1] == ' ') e -= 1;
+                    return names_str[s..e];
+                }
+                current_idx += 1;
+                start = i + 1;
+            }
+        }
+        // Fallback if not enough names provided
+        return std.fmt.comptimePrint("arg{d}", .{idx});
+    }
+}
+
+/// Resolve the return type string for a method, checking for __returns__ override first.
+fn resolveReturnType(comptime name: []const u8, comptime fn_info: anytype, comptime ClassType: type) []const u8 {
+    comptime {
+        // Check for explicit return type override
+        if (@hasDecl(ClassType, name ++ "__returns__")) {
+            return asSlice(@field(ClassType, name ++ "__returns__"));
+        }
+        // Introspect from function signature
+        if (fn_info.return_type) |ret| {
+            const ret_info = @typeInfo(ret);
+            if (ret_info == .error_union) {
+                return zigTypeToPython(ret_info.error_union.payload);
+            } else {
+                return zigTypeToPython(ret);
+            }
+        }
+        return "None";
+    }
 }
 
 // =============================================================================
@@ -498,15 +559,18 @@ pub fn generateFunctionStub(
 }
 
 /// Generate stub for a class
-pub fn generateClassStub(comptime name: []const u8, comptime T: type) []const u8 {
+pub fn generateClassStub(comptime name: []const u8, comptime T: type, comptime base: ?[]const u8) []const u8 {
     comptime {
-        var result: []const u8 = "class " ++ name ++ ":\n";
+        var result: []const u8 = if (base) |b|
+            "class " ++ name ++ "(" ++ b ++ "):\n"
+        else
+            "class " ++ name ++ ":\n";
         const struct_info = @typeInfo(T).@"struct";
         const fields = struct_info.fields;
 
-        // Class docstring
+        // Class docstring — emit actual content from __doc__
         if (@hasDecl(T, "__doc__")) {
-            result = result ++ "    \"\"\"...\"\"\"\n";
+            result = result ++ "    \"\"\"" ++ asSlice(@field(T, "__doc__")) ++ "\"\"\"\n";
         }
 
         // Fields as class-level annotations (skip private fields starting with _)
@@ -535,20 +599,29 @@ pub fn generateClassStub(comptime name: []const u8, comptime T: type) []const u8
             if (decl.name[0] == '_') continue;
             if (std.mem.startsWith(u8, decl.name, "classattr_")) continue;
 
-            // Skip docstring declarations
+            // Skip stub annotation declarations
             if (std.mem.endsWith(u8, decl.name, "__doc__")) continue;
+            if (std.mem.endsWith(u8, decl.name, "__returns__")) continue;
+            if (std.mem.endsWith(u8, decl.name, "__params__")) continue;
 
             const decl_value = @field(T, decl.name);
             const DeclType = @TypeOf(decl_value);
 
             if (@typeInfo(DeclType) == .@"fn") {
-                result = result ++ generateMethodStub(decl.name, DeclType, T);
+                // Look up optional method docstring
+                const method_doc: ?[]const u8 = if (@hasDecl(T, decl.name ++ "__doc__"))
+                    asSlice(@field(T, decl.name ++ "__doc__"))
+                else
+                    null;
+                result = result ++ generateMethodStub(decl.name, DeclType, T, method_doc);
             }
         }
 
         // Computed properties (get_X / set_X)
         for (struct_info.decls) |decl| {
             if (std.mem.startsWith(u8, decl.name, "get_")) {
+                // Must be a function, not a constant (e.g. get_error__doc__)
+                if (@typeInfo(@TypeOf(@field(T, decl.name))) != .@"fn") continue;
                 const prop_name = decl.name[4..];
                 // Check if there's a corresponding setter
                 const has_setter = @hasDecl(T, "set_" ++ prop_name);
@@ -595,7 +668,7 @@ pub fn generateClassStub(comptime name: []const u8, comptime T: type) []const u8
             }
         }
 
-        // Magic methods
+        // Magic methods with fixed return types (these never vary)
         for (.{
             .{ "__repr__", "str" },
             .{ "__str__", "str" },
@@ -606,13 +679,93 @@ pub fn generateClassStub(comptime name: []const u8, comptime T: type) []const u8
             .{ "__float__", "float" },
             .{ "__complex__", "complex" },
             .{ "__index__", "int" },
-            .{ "__iter__", "Iterator[Any]" },
-            .{ "__next__", "Any" },
-            .{ "__call__", "Any" },
-            .{ "__enter__", "Any" },
         }) |magic| {
             if (@hasDecl(T, magic[0])) {
                 result = result ++ "    def " ++ magic[0] ++ "(self) -> " ++ magic[1] ++ ": ...\n";
+            }
+        }
+
+        // __iter__ — introspect return type
+        if (@hasDecl(T, "__iter__")) {
+            const iter_info = @typeInfo(@TypeOf(@field(T, "__iter__"))).@"fn";
+            const iter_ret = iter_info.return_type.?;
+            const iter_ret_info = @typeInfo(iter_ret);
+            // If returns *Self, it's a self-iterator — derive element type from __next__
+            if (iter_ret_info == .pointer and iter_ret_info.pointer.child == T) {
+                if (@hasDecl(T, "__next__")) {
+                    const next_info = @typeInfo(@TypeOf(@field(T, "__next__"))).@"fn";
+                    const next_ret = next_info.return_type.?;
+                    const next_ret_info = @typeInfo(next_ret);
+                    if (next_ret_info == .optional) {
+                        result = result ++ "    def __iter__(self) -> Iterator[" ++ zigTypeToPython(next_ret_info.optional.child) ++ "]: ...\n";
+                    } else if (next_ret_info == .error_union) {
+                        const payload_info = @typeInfo(next_ret_info.error_union.payload);
+                        if (payload_info == .optional) {
+                            result = result ++ "    def __iter__(self) -> Iterator[" ++ zigTypeToPython(payload_info.optional.child) ++ "]: ...\n";
+                        } else {
+                            result = result ++ "    def __iter__(self) -> Iterator[" ++ zigTypeToPython(next_ret_info.error_union.payload) ++ "]: ...\n";
+                        }
+                    } else {
+                        result = result ++ "    def __iter__(self) -> Iterator[" ++ zigTypeToPython(next_ret) ++ "]: ...\n";
+                    }
+                } else {
+                    result = result ++ "    def __iter__(self) -> Iterator[Any]: ...\n";
+                }
+            } else {
+                result = result ++ "    def __iter__(self) -> " ++ zigTypeToPython(iter_ret) ++ ": ...\n";
+            }
+        }
+
+        // __next__ — unwrap optional (None = StopIteration in Python)
+        if (@hasDecl(T, "__next__")) {
+            const next_info = @typeInfo(@TypeOf(@field(T, "__next__"))).@"fn";
+            const next_ret = next_info.return_type.?;
+            const next_ret_info = @typeInfo(next_ret);
+            if (next_ret_info == .optional) {
+                result = result ++ "    def __next__(self) -> " ++ zigTypeToPython(next_ret_info.optional.child) ++ ": ...\n";
+            } else if (next_ret_info == .error_union) {
+                const payload_info = @typeInfo(next_ret_info.error_union.payload);
+                if (payload_info == .optional) {
+                    result = result ++ "    def __next__(self) -> " ++ zigTypeToPython(payload_info.optional.child) ++ ": ...\n";
+                } else {
+                    result = result ++ "    def __next__(self) -> " ++ zigTypeToPython(next_ret_info.error_union.payload) ++ ": ...\n";
+                }
+            } else {
+                result = result ++ "    def __next__(self) -> " ++ zigTypeToPython(next_ret) ++ ": ...\n";
+            }
+        }
+
+        // __call__ — introspect full signature
+        if (@hasDecl(T, "__call__")) {
+            const call_info = @typeInfo(@TypeOf(@field(T, "__call__"))).@"fn";
+            const call_params = call_info.params;
+            result = result ++ "    def __call__(self";
+            // Check for parameter name override
+            const has_call_params = @hasDecl(T, "__call____params__");
+            const call_params_str: []const u8 = if (has_call_params) asSlice(@field(T, "__call____params__")) else "";
+            var cidx: usize = 0;
+            for (call_params[1..]) |param| {
+                if (param.type) |ptype| {
+                    const pname = if (has_call_params)
+                        getParamName(call_params_str, cidx)
+                    else
+                        std.fmt.comptimePrint("arg{d}", .{cidx});
+                    result = result ++ ", " ++ pname ++ ": " ++ zigTypeToPython(ptype);
+                    cidx += 1;
+                }
+            }
+            result = result ++ ") -> " ++ resolveReturnType("__call__", call_info, T) ++ ": ...\n";
+        }
+
+        // __enter__ — introspect return type
+        if (@hasDecl(T, "__enter__")) {
+            const enter_info = @typeInfo(@TypeOf(@field(T, "__enter__"))).@"fn";
+            const enter_ret = enter_info.return_type.?;
+            const enter_ret_info = @typeInfo(enter_ret);
+            if (enter_ret_info == .pointer and enter_ret_info.pointer.child == T) {
+                result = result ++ "    def __enter__(self) -> " ++ name ++ ": ...\n";
+            } else {
+                result = result ++ "    def __enter__(self) -> " ++ zigTypeToPython(enter_ret) ++ ": ...\n";
             }
         }
 
@@ -656,18 +809,33 @@ pub fn generateClassStub(comptime name: []const u8, comptime T: type) []const u8
             }
         }
 
-        // Sequence/mapping methods
+        // Sequence/mapping methods — introspect actual types
         if (@hasDecl(T, "__getitem__")) {
-            result = result ++ "    def __getitem__(self, key: Any) -> Any: ...\n";
+            const gi_info = @typeInfo(@TypeOf(@field(T, "__getitem__"))).@"fn";
+            const gi_key_type = zigTypeToPython(gi_info.params[1].type.?);
+            const gi_ret = gi_info.return_type.?;
+            const gi_ret_info = @typeInfo(gi_ret);
+            const gi_value_type = if (gi_ret_info == .error_union)
+                zigTypeToPython(gi_ret_info.error_union.payload)
+            else
+                zigTypeToPython(gi_ret);
+            result = result ++ "    def __getitem__(self, key: " ++ gi_key_type ++ ") -> " ++ gi_value_type ++ ": ...\n";
         }
         if (@hasDecl(T, "__setitem__")) {
-            result = result ++ "    def __setitem__(self, key: Any, value: Any) -> None: ...\n";
+            const si_info = @typeInfo(@TypeOf(@field(T, "__setitem__"))).@"fn";
+            const si_key_type = zigTypeToPython(si_info.params[1].type.?);
+            const si_val_type = zigTypeToPython(si_info.params[2].type.?);
+            result = result ++ "    def __setitem__(self, key: " ++ si_key_type ++ ", value: " ++ si_val_type ++ ") -> None: ...\n";
         }
         if (@hasDecl(T, "__delitem__")) {
-            result = result ++ "    def __delitem__(self, key: Any) -> None: ...\n";
+            const di_info = @typeInfo(@TypeOf(@field(T, "__delitem__"))).@"fn";
+            const di_key_type = zigTypeToPython(di_info.params[1].type.?);
+            result = result ++ "    def __delitem__(self, key: " ++ di_key_type ++ ") -> None: ...\n";
         }
         if (@hasDecl(T, "__contains__")) {
-            result = result ++ "    def __contains__(self, item: Any) -> bool: ...\n";
+            const ct_info = @typeInfo(@TypeOf(@field(T, "__contains__"))).@"fn";
+            const ct_item_type = zigTypeToPython(ct_info.params[1].type.?);
+            result = result ++ "    def __contains__(self, item: " ++ ct_item_type ++ ") -> bool: ...\n";
         }
 
         // Context manager
@@ -682,11 +850,15 @@ pub fn generateClassStub(comptime name: []const u8, comptime T: type) []const u8
 }
 
 /// Generate stub for a single method
-fn generateMethodStub(comptime name: []const u8, comptime Fn: type, comptime ClassType: type) []const u8 {
+fn generateMethodStub(comptime name: []const u8, comptime Fn: type, comptime ClassType: type, comptime doc: ?[]const u8) []const u8 {
     comptime {
         var result: []const u8 = "";
         const fn_info = @typeInfo(Fn).@"fn";
         const params = fn_info.params;
+
+        // Check for parameter name override
+        const has_param_names = @hasDecl(ClassType, name ++ "__params__");
+        const param_names_str: []const u8 = if (has_param_names) asSlice(@field(ClassType, name ++ "__params__")) else "";
 
         if (params.len == 0) {
             // No parameters - static method
@@ -710,16 +882,21 @@ fn generateMethodStub(comptime name: []const u8, comptime Fn: type, comptime Cla
                 // Static method
                 result = result ++ "    @staticmethod\n    def " ++ name ++ "(";
                 // First param is not self, include it
-                result = result ++ "arg0: " ++ zigTypeToPython(first_param);
+                const p0name = if (has_param_names) getParamName(param_names_str, 0) else "arg0";
+                result = result ++ p0name ++ ": " ++ zigTypeToPython(first_param);
             }
 
-            // Rest of parameters - use argN naming with incrementing index
+            // Rest of parameters
             const start_idx: usize = if (is_self or is_classmethod) 1 else 1;
             var param_idx: usize = if (is_self or is_classmethod) 0 else 1;
 
             for (params[start_idx..]) |param| {
                 if (param.type) |ptype| {
-                    result = result ++ ", " ++ std.fmt.comptimePrint("arg{d}", .{param_idx}) ++ ": " ++ zigTypeToPython(ptype);
+                    const pname = if (has_param_names)
+                        getParamName(param_names_str, param_idx)
+                    else
+                        std.fmt.comptimePrint("arg{d}", .{param_idx});
+                    result = result ++ ", " ++ pname ++ ": " ++ zigTypeToPython(ptype);
                     param_idx += 1;
                 }
             }
@@ -727,19 +904,16 @@ fn generateMethodStub(comptime name: []const u8, comptime Fn: type, comptime Cla
 
         result = result ++ ") -> ";
 
-        // Return type
-        if (fn_info.return_type) |ret| {
-            const ret_info = @typeInfo(ret);
-            if (ret_info == .error_union) {
-                result = result ++ zigTypeToPython(ret_info.error_union.payload);
-            } else {
-                result = result ++ zigTypeToPython(ret);
-            }
-        } else {
-            result = result ++ "None";
-        }
+        // Return type — check for __returns__ override first
+        result = result ++ resolveReturnType(name, fn_info, ClassType);
 
-        result = result ++ ": ...\n";
+        if (doc) |d| {
+            result = result ++ ":\n";
+            result = result ++ "        \"\"\"" ++ d ++ "\"\"\"\n";
+            result = result ++ "        ...\n";
+        } else {
+            result = result ++ ": ...\n";
+        }
 
         return result;
     }
@@ -813,14 +987,25 @@ pub fn generateModuleStubs(comptime config: anytype) []const u8 {
             result = result ++ "from enum import Enum\n\n";
         }
 
-        // Exceptions
+        // Exceptions — skip those that are also registered as classes (merged below)
         if (@hasField(@TypeOf(config), "exceptions")) {
             const exceptions = config.exceptions;
             for (exceptions) |exc| {
-                result = result ++ generateExceptionStub(
-                    std.mem.span(exc.name),
-                    if (exc.doc) |d| std.mem.span(d) else null,
-                );
+                const exc_name = std.mem.span(exc.name);
+                var is_also_class = false;
+                if (@hasField(@TypeOf(config), "classes")) {
+                    for (config.classes) |cls| {
+                        if (std.mem.eql(u8, std.mem.span(cls.name), exc_name)) {
+                            is_also_class = true;
+                        }
+                    }
+                }
+                if (!is_also_class) {
+                    result = result ++ generateExceptionStub(
+                        exc_name,
+                        if (exc.doc) |d| std.mem.span(d) else null,
+                    );
+                }
             }
         }
 
@@ -842,11 +1027,20 @@ pub fn generateModuleStubs(comptime config: anytype) []const u8 {
             }
         }
 
-        // Classes
+        // Classes — merge with exception base if also registered as exception
         if (@hasField(@TypeOf(config), "classes")) {
             const classes = config.classes;
             for (classes) |cls| {
-                result = result ++ generateClassStub(std.mem.span(cls.name), cls.zig_type);
+                const cls_name = std.mem.span(cls.name);
+                var exception_base: ?[]const u8 = null;
+                if (@hasField(@TypeOf(config), "exceptions")) {
+                    for (config.exceptions) |exc| {
+                        if (std.mem.eql(u8, std.mem.span(exc.name), cls_name)) {
+                            exception_base = "Exception";
+                        }
+                    }
+                }
+                result = result ++ generateClassStub(cls_name, cls.zig_type, exception_base);
             }
         }
 

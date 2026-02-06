@@ -69,6 +69,8 @@ pub fn create(allocator: std.mem.Allocator, name_opt: ?[]const u8, in_current_di
         try writeLocalBuildZigZon(allocator, project_dir, name, local_path);
     } else {
         try writeTemplate(allocator, project_dir, "build.zig.zon", build_zig_zon_template, name);
+        // Patch fingerprint by running zig build and parsing the suggestion
+        patchFingerprint(allocator, project_dir);
     }
 
     // Create .gitignore
@@ -139,12 +141,6 @@ fn replaceInTemplate(allocator: std.mem.Allocator, template: []const u8, name: [
     var result = std.ArrayListUnmanaged(u8){};
     errdefer result.deinit(allocator);
 
-    // Generate a random fingerprint for this project
-    var fingerprint: u64 = undefined;
-    std.crypto.random.bytes(std.mem.asBytes(&fingerprint));
-    var fingerprint_buf: [18]u8 = undefined; // "0x" + 16 hex digits
-    const fingerprint_str = std.fmt.bufPrint(&fingerprint_buf, "0x{x}", .{fingerprint}) catch unreachable;
-
     var i: usize = 0;
     while (i < template.len) {
         if (i + 9 <= template.len and std.mem.eql(u8, template[i .. i + 9], "{[name]s}")) {
@@ -153,9 +149,6 @@ fn replaceInTemplate(allocator: std.mem.Allocator, template: []const u8, name: [
         } else if (i + 17 <= template.len and std.mem.eql(u8, template[i .. i + 17], "{[pyoz_version]s}")) {
             try result.appendSlice(allocator, version.string);
             i += 17;
-        } else if (i + 16 <= template.len and std.mem.eql(u8, template[i .. i + 16], "{[fingerprint]s}")) {
-            try result.appendSlice(allocator, fingerprint_str);
-            i += 16;
         } else {
             try result.append(allocator, template[i]);
             i += 1;
@@ -231,6 +224,49 @@ fn computeRelativePath(allocator: std.mem.Allocator, from_path: []const u8, to_p
     return result.toOwnedSlice(allocator);
 }
 
+/// Run `zig build` in the project directory, parse the suggested fingerprint
+/// from stderr, and patch build.zig.zon to include it.
+fn patchFingerprint(allocator: std.mem.Allocator, dir: std.fs.Dir) void {
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+    const cwd_path = dir.realpath(".", &path_buf) catch return;
+
+    const result = std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "zig", "build" },
+        .cwd = cwd_path,
+    }) catch return; // If zig build fails to run, skip fingerprint patching
+
+    defer allocator.free(result.stdout);
+    defer allocator.free(result.stderr);
+
+    // Parse the suggested fingerprint from stderr
+    // Format: "suggested value: 0x661af9ad2d7f95bc"
+    if (std.mem.indexOf(u8, result.stderr, "suggested value: 0x")) |idx| {
+        const start = idx + 19; // length of "suggested value: 0x"
+        if (start + 16 <= result.stderr.len) {
+            const fingerprint_hex = result.stderr[start .. start + 16];
+            // Read existing content and insert fingerprint
+            const existing = dir.readFileAlloc(allocator, "build.zig.zon", 4096) catch return;
+            defer allocator.free(existing);
+
+            var patched = std.ArrayListUnmanaged(u8){};
+            defer patched.deinit(allocator);
+
+            // Insert fingerprint after version line
+            if (std.mem.indexOf(u8, existing, ".version = \"0.1.0\",")) |ver_idx| {
+                const insert_pos = ver_idx + 19; // after version line
+                patched.appendSlice(allocator, existing[0..insert_pos]) catch return;
+                patched.appendSlice(allocator, "\n    .fingerprint = 0x") catch return;
+                patched.appendSlice(allocator, fingerprint_hex) catch return;
+                patched.appendSlice(allocator, ",") catch return;
+                patched.appendSlice(allocator, existing[insert_pos..]) catch return;
+
+                dir.writeFile(.{ .sub_path = "build.zig.zon", .data = patched.items }) catch return;
+            }
+        }
+    }
+}
+
 fn writeLocalBuildZigZon(
     allocator: std.mem.Allocator,
     dir: std.fs.Dir,
@@ -275,45 +311,8 @@ fn writeLocalBuildZigZon(
     defer allocator.free(content);
     try dir.writeFile(.{ .sub_path = "build.zig.zon", .data = content });
 
-    // Run zig build to get the suggested fingerprint, then patch the file
-    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
-    const cwd_path = try dir.realpath(".", &path_buf);
-
-    const result = std.process.Child.run(.{
-        .allocator = allocator,
-        .argv = &.{ "zig", "build" },
-        .cwd = cwd_path,
-    }) catch return; // If zig build fails to run, skip fingerprint patching
-
-    defer allocator.free(result.stdout);
-    defer allocator.free(result.stderr);
-
-    // Parse the suggested fingerprint from stderr
-    // Format: "suggested value: 0x661af9ad2d7f95bc"
-    if (std.mem.indexOf(u8, result.stderr, "suggested value: 0x")) |idx| {
-        const start = idx + 19; // length of "suggested value: 0x"
-        if (start + 16 <= result.stderr.len) {
-            const fingerprint_hex = result.stderr[start .. start + 16];
-            // Read existing content and insert fingerprint
-            const existing = try dir.readFileAlloc(allocator, "build.zig.zon", 4096);
-            defer allocator.free(existing);
-
-            var patched = std.ArrayListUnmanaged(u8){};
-            defer patched.deinit(allocator);
-
-            // Insert fingerprint after version line
-            if (std.mem.indexOf(u8, existing, ".version = \"0.1.0\",")) |ver_idx| {
-                const insert_pos = ver_idx + 19; // after version line
-                try patched.appendSlice(allocator, existing[0..insert_pos]);
-                try patched.appendSlice(allocator, "\n    .fingerprint = 0x");
-                try patched.appendSlice(allocator, fingerprint_hex);
-                try patched.appendSlice(allocator, ",");
-                try patched.appendSlice(allocator, existing[insert_pos..]);
-
-                try dir.writeFile(.{ .sub_path = "build.zig.zon", .data = patched.items });
-            }
-        }
-    }
+    // Patch fingerprint by running zig build and parsing the suggestion
+    patchFingerprint(allocator, dir);
 }
 
 // =============================================================================
@@ -339,8 +338,16 @@ const pyproject_template =
     \\# Optimization level for release builds: "Debug", "ReleaseSafe", "ReleaseFast", "ReleaseSmall"
     \\# optimize = "ReleaseFast"
     \\
+    \\# Native module name (defaults to project name)
+    \\# Use "_name" prefix to separate the .so from a Python wrapper package
+    \\# module-name = "_mymodule"
+    \\
     \\# Strip debug symbols in release builds
     \\# strip = true
+    \\
+    \\# File extensions to include from py-packages (default: .py only)
+    \\# Use ["*"] to include all files
+    \\# include-ext = ["py", "zig", "json"]
     \\
     \\# Linux platform tag for wheel builds (default: "linux_x86_64" or "linux_aarch64")
     \\# Use manylinux tags only if building in a manylinux container
@@ -453,7 +460,6 @@ const build_zig_zon_template =
     \\.{
     \\    .name = .{[name]s},
     \\    .version = "0.1.0",
-    \\    .fingerprint = {[fingerprint]s},
     \\    .dependencies = .{
     \\        .PyOZ = .{
     \\            .url = "https://github.com/dzonerzy/PyOZ/archive/refs/tags/v{[pyoz_version]s}.tar.gz",

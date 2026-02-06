@@ -195,7 +195,7 @@ pub fn buildModule(allocator: std.mem.Allocator, release: bool) !BuildResult {
             return error.BuildFailed;
         }
 
-        const module_name = try std.fmt.allocPrint(allocator, "{s}{s}", .{ config.name, ext });
+        const module_name = try std.fmt.allocPrint(allocator, "{s}{s}", .{ config.getModuleName(), ext });
         const module_path = try std.fmt.allocPrint(allocator, "zig-out/lib/{s}", .{module_name});
 
         return BuildResult{

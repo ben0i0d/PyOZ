@@ -138,7 +138,7 @@ fn createWheelZip(
     }
 
     for (config.py_packages.items) |pkg| {
-        try addPythonPackage(allocator, &z, cwd, pkg, &py_files);
+        try addPythonPackage(allocator, &z, cwd, pkg, &py_files, config);
     }
 
     // Create dist-info directory name
@@ -300,13 +300,15 @@ fn getMacOSPlatformTag(allocator: std.mem.Allocator) ![]const u8 {
     return try std.fmt.allocPrint(allocator, "macosx_{d}_{d}_{s}", .{ major, minor, arch_str });
 }
 
-/// Recursively add all .py files from a package directory to the wheel
+/// Recursively add files from a package directory to the wheel.
+/// File extensions are filtered by the include-ext config (defaults to .py only).
 fn addPythonPackage(
     allocator: std.mem.Allocator,
     z: *zip.ZipWriter,
     cwd: std.fs.Dir,
     pkg_name: []const u8,
     py_files: *std.ArrayListUnmanaged([]const u8),
+    config: *const project.toml.PyProjectConfig,
 ) !void {
     var pkg_dir = cwd.openDir(pkg_name, .{ .iterate = true }) catch |err| {
         std.debug.print("  Warning: Python package directory '{s}' not found: {}\n", .{ pkg_name, err });
@@ -319,7 +321,7 @@ fn addPythonPackage(
 
     while (try walker.next()) |entry| {
         if (entry.kind != .file) continue;
-        if (!std.mem.endsWith(u8, entry.basename, ".py")) continue;
+        if (!config.shouldIncludeFile(entry.basename)) continue;
 
         // Build the in-wheel path: pkg_name/subdir/file.py
         const wheel_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ pkg_name, entry.path });

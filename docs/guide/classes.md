@@ -134,6 +134,25 @@ PyOZ supports Python's special methods. Define them as regular Zig functions wit
 | `__str__` | User-friendly string (`str(obj)`) |
 | `__hash__` | Hash value for use in sets/dicts |
 
+Both `__repr__` and `__str__` support two signatures:
+
+```zig
+// Buffered (recommended) — PyOZ provides a 4096-byte buffer you can write into.
+// The returned slice must point into `buf`. This avoids use-after-free when
+// formatting with std.fmt.bufPrint.
+pub fn __repr__(self: *const MyStruct, buf: []u8) []const u8 {
+    return std.fmt.bufPrint(buf, "MyStruct(x={d})", .{self.x}) catch "MyStruct(?)";
+}
+
+// Literal-only — safe ONLY when returning a string literal or other
+// static/comptime-known data. Returning a slice into a local stack buffer
+// is undefined behavior.
+pub fn __repr__(self: *const MyStruct) []const u8 {
+    _ = self;
+    return "MyStruct(...)";
+}
+```
+
 ### Type Conversion
 
 | Method | Purpose |
@@ -295,14 +314,42 @@ For dict subclasses, implement `__missing__` to handle missing keys.
 
 ## GC Support
 
-For classes holding Python object references, implement garbage collection hooks:
+For classes holding Python object references, implement garbage collection hooks to allow Python's cyclic garbage collector to detect and break reference cycles:
 
-| Method | Purpose |
-|--------|---------|
-| `__traverse__(visitor: pyoz.GCVisitor) c_int` | Report held references |
-| `__clear__()` | Release references to break cycles |
+| Method | Signature | Purpose |
+|--------|-----------|---------|
+| `__traverse__` | `fn(self: *T, visitor: pyoz.GCVisitor) c_int` | Report held references |
+| `__clear__` | `fn(self: *T) void` | Release references to break cycles |
 
-Call `visitor.call(self.stored_obj)` for each `?*PyObject` field.
+The `GCVisitor` is passed **by value** (not by pointer). Call `visitor.call()` for each `?*PyObject` field and check its return value:
+
+```zig
+const Observer = struct {
+    name: [64]u8,
+    name_len: usize,
+    _callback: ?*pyoz.PyObject,   // Held Python reference
+    _target: ?*pyoz.PyObject,     // Another held reference
+
+    pub fn __traverse__(self: *Observer, visitor: pyoz.GCVisitor) c_int {
+        // Visit each Python object reference. Return immediately if non-zero.
+        var ret = visitor.call(self._callback);
+        if (ret != 0) return ret;
+        ret = visitor.call(self._target);
+        if (ret != 0) return ret;
+        return 0;
+    }
+
+    pub fn __clear__(self: *Observer) void {
+        // Release references to break cycles
+        if (self._callback) |cb| pyoz.py.Py_DecRef(cb);
+        self._callback = null;
+        if (self._target) |t| pyoz.py.Py_DecRef(t);
+        self._target = null;
+    }
+};
+```
+
+Only implement GC hooks for classes that store `?*PyObject` fields. Classes with only Zig-native fields (integers, floats, arrays, etc.) don't need GC support.
 
 ## Custom Cleanup (`__del__`)
 
@@ -408,6 +455,94 @@ print(start.magnitude())                  # full Point API works
 ```
 
 Cyclic references work too — class A methods can accept/return class B and vice versa, as long as both are registered in the same module.
+
+### Manual Conversion with `Module.toPy()`
+
+The examples above use direct Zig return types (`Point`, `Line`) which PyOZ converts automatically. When you need to build raw Python objects manually (e.g., a Python list of class instances), use the module-level converter:
+
+```zig
+/// Returns a Python list of Point objects
+pub fn vertices(self: *const Polygon) ?*pyoz.PyObject {
+    const list = pyoz.py.PyList_New(0) orelse return null;
+    for (self.points) |pt| {
+        // Module.toPy knows about Point — wraps it as a Python Point object
+        const obj = Module.toPy(Point, pt) orelse {
+            pyoz.py.Py_DecRef(list);
+            return null;
+        };
+        _ = pyoz.py.PyList_Append(list, obj);
+        pyoz.py.Py_DecRef(obj);
+    }
+    return list;
+}
+```
+
+> **Note:** `pyoz.Conversions.toPy()` does **not** know about registered classes and will return `null` for class types. Always use `Module.toPy()` when converting class instances manually.
+
+## Stub Customization
+
+PyOZ auto-generates `.pyi` type stubs from your Zig code. Most types are inferred automatically, but three opt-in conventions let you fine-tune the output:
+
+### Docstrings
+
+Class and method docstrings are propagated to stubs:
+
+```zig
+const Node = struct {
+    pub const __doc__: [*:0]const u8 = "A node in the parse tree.";
+    pub const rule__doc__: [*:0]const u8 = "Return the grammar rule name.";
+
+    pub fn rule(self: *const Node) []const u8 { ... }
+};
+```
+
+Generated stub:
+```python
+class Node:
+    """A node in the parse tree."""
+    def rule(self) -> str:
+        """Return the grammar rule name."""
+        ...
+```
+
+### Return Type Override (`__returns__`)
+
+When a method returns `?*pyoz.PyObject`, the stub shows `Any | None`. Override it with the concrete Python type:
+
+```zig
+const Node = struct {
+    pub const children__returns__: []const u8 = "list[Node]";
+
+    pub fn children(self: *const Node) ?*pyoz.PyObject { ... }
+};
+```
+
+Generated stub:
+```python
+def children(self) -> list[Node]: ...
+```
+
+### Parameter Names (`__params__`)
+
+Zig's `@typeInfo` does not expose function parameter names, so stubs default to `arg0, arg1, ...`. Override with actual names:
+
+```zig
+const Node = struct {
+    pub const find__params__: []const u8 = "rule_name";
+    pub const child__params__: []const u8 = "index";
+
+    pub fn find(self: *const Node, name: []const u8) ?*pyoz.PyObject { ... }
+    pub fn child(self: *const Node, idx: i64) ?Node { ... }
+};
+```
+
+Generated stub:
+```python
+def find(self, rule_name: str) -> Any | None: ...
+def child(self, index: int) -> Node | None: ...
+```
+
+Names are comma-separated (excluding `self`). If fewer names are provided than parameters, remaining ones fall back to `argN`.
 
 ## Next Steps
 

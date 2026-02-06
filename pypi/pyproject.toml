@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pyoz"
-version = "0.8.0"
+version = "0.9.0"
 description = "Python extension modules in Zig, made easy"
 readme = "README.md"
 license = "MIT"
@@ -29,10 +29,11 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/pyozig/PyOZ"
-Documentation = "https://github.com/pyozig/PyOZ/tree/main/docs"
+Homepage = "https://pyoz.dev"
+Documentation = "https://pyoz.dev"
 Repository = "https://github.com/pyozig/PyOZ"
 Issues = "https://github.com/pyozig/PyOZ/issues"
+Changelog = "https://pyoz.dev/changelog"
 
 [project.scripts]
 pyoz = "pyoz:main"

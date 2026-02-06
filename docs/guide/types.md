@@ -150,7 +150,56 @@ The class must be registered in the same module.
 
 ## Raw Python Objects
 
-For advanced cases, use `*pyoz.PyObject` to accept any Python object. You're responsible for reference counting and type checking.
+For advanced cases, use `*pyoz.PyObject` to work directly with Python objects. You're responsible for reference counting and type checking.
+
+**As parameters:** Accept any Python object and convert manually:
+
+```zig
+pub fn process(self: *MyClass, obj: *pyoz.PyObject) i64 {
+    // Use pyoz.Conversions.fromPy() or the C API directly
+    return pyoz.Conversions.fromPy(i64, obj) catch 0;
+}
+```
+
+**As return type:** Return a raw Python object built via the C API:
+
+```zig
+pub fn children(self: *const MyClass) ?*pyoz.PyObject {
+    const list = pyoz.py.PyList_New(2) orelse return null;
+    // ... populate list with PyList_SetItem ...
+    return list;
+}
+```
+
+When returning `?*pyoz.PyObject`, the converter passes it through as-is — no additional conversion is applied. Return `null` to signal an error (set the exception first with `pyoz.raiseValueError()` etc.).
+
+**Converting registered classes to PyObject:** When building raw Python containers that hold instances of your registered classes, use the module-level converter instead of `pyoz.Conversions`. The generic `pyoz.Conversions` has no class knowledge and will return `null` for class types.
+
+```zig
+const Module = pyoz.module(.{
+    .name = "mymodule",
+    .classes = &.{ pyoz.class("Node", Node) },
+});
+
+const Node = struct {
+    value: i64,
+
+    /// Build a Python list of Node objects using the module converter
+    pub fn children(self: *const Node) ?*pyoz.PyObject {
+        const list = pyoz.py.PyList_New(0) orelse return null;
+        for (self.getChildren()) |child| {
+            // Module.toPy knows about Node — pyoz.Conversions.toPy does NOT
+            const obj = Module.toPy(Node, child) orelse {
+                pyoz.py.Py_DecRef(list);
+                return null;
+            };
+            _ = pyoz.py.PyList_Append(list, obj);
+            pyoz.py.Py_DecRef(obj);
+        }
+        return list;
+    }
+};
+```
 
 ## Callable (Python Callbacks)
 
@@ -195,6 +244,7 @@ fn run_hook(callback: pyoz.Callable(void), value: i64) bool {
 | Both | `?T` | T or None |
 | Both | Special types (Complex, DateTime, etc.) | Corresponding Python types |
 | Input only | View types (ListView, BufferView, etc.) | list, dict, set, ndarray |
+| Both | `*pyoz.PyObject` | Any Python object (advanced) |
 | Input only | `*const T`, `*T` | Class instances |
 | Input only | `pyoz.Callable(T)` | Functions, lambdas, any callable |
 | Input only | `[N]T` | list (exact size) |

@@ -226,109 +226,109 @@ pub fn clearException() void {
 pub const Null = @TypeOf(null);
 
 /// Raise a Python exception with a message
-pub fn raiseException(exc_type: *PyObject, comptime message: [*:0]const u8) Null {
+pub fn raiseException(exc_type: *PyObject, message: [*:0]const u8) Null {
     py.PyErr_SetString(exc_type, message);
     return null;
 }
 
 /// Raise a ValueError with a message
-pub fn raiseValueError(comptime message: [*:0]const u8) Null {
+pub fn raiseValueError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_ValueError(), message);
     return null;
 }
 
 /// Raise a TypeError with a message
-pub fn raiseTypeError(comptime message: [*:0]const u8) Null {
+pub fn raiseTypeError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_TypeError(), message);
     return null;
 }
 
 /// Raise a RuntimeError with a message
-pub fn raiseRuntimeError(comptime message: [*:0]const u8) Null {
+pub fn raiseRuntimeError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_RuntimeError(), message);
     return null;
 }
 
 /// Raise a KeyError with a message
-pub fn raiseKeyError(comptime message: [*:0]const u8) Null {
+pub fn raiseKeyError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_KeyError(), message);
     return null;
 }
 
 /// Raise an IndexError with a message
-pub fn raiseIndexError(comptime message: [*:0]const u8) Null {
+pub fn raiseIndexError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_IndexError(), message);
     return null;
 }
 
 /// Raise an AttributeError with a message
-pub fn raiseAttributeError(comptime message: [*:0]const u8) Null {
+pub fn raiseAttributeError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_AttributeError(), message);
     return null;
 }
 
 /// Raise a MemoryError with a message
-pub fn raiseMemoryError(comptime message: [*:0]const u8) Null {
+pub fn raiseMemoryError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_MemoryError(), message);
     return null;
 }
 
 /// Raise an OSError with a message
-pub fn raiseOSError(comptime message: [*:0]const u8) Null {
+pub fn raiseOSError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_OSError(), message);
     return null;
 }
 
 /// Raise a NotImplementedError with a message
-pub fn raiseNotImplementedError(comptime message: [*:0]const u8) Null {
+pub fn raiseNotImplementedError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_NotImplementedError(), message);
     return null;
 }
 
 /// Raise an OverflowError with a message
-pub fn raiseOverflowError(comptime message: [*:0]const u8) Null {
+pub fn raiseOverflowError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_OverflowError(), message);
     return null;
 }
 
 /// Raise a ZeroDivisionError with a message
-pub fn raiseZeroDivisionError(comptime message: [*:0]const u8) Null {
+pub fn raiseZeroDivisionError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_ZeroDivisionError(), message);
     return null;
 }
 
 /// Raise a FileNotFoundError with a message
-pub fn raiseFileNotFoundError(comptime message: [*:0]const u8) Null {
+pub fn raiseFileNotFoundError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_FileNotFoundError(), message);
     return null;
 }
 
 /// Raise a PermissionError with a message
-pub fn raisePermissionError(comptime message: [*:0]const u8) Null {
+pub fn raisePermissionError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_PermissionError(), message);
     return null;
 }
 
 /// Raise a TimeoutError with a message
-pub fn raiseTimeoutError(comptime message: [*:0]const u8) Null {
+pub fn raiseTimeoutError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_TimeoutError(), message);
     return null;
 }
 
 /// Raise a ConnectionError with a message
-pub fn raiseConnectionError(comptime message: [*:0]const u8) Null {
+pub fn raiseConnectionError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_ConnectionError(), message);
     return null;
 }
 
 /// Raise an EOFError with a message
-pub fn raiseEOFError(comptime message: [*:0]const u8) Null {
+pub fn raiseEOFError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_EOFError(), message);
     return null;
 }
 
 /// Raise an ImportError with a message
-pub fn raiseImportError(comptime message: [*:0]const u8) Null {
+pub fn raiseImportError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_ImportError(), message);
     return null;
 }
@@ -340,61 +340,61 @@ pub fn raiseStopIteration() Null {
 }
 
 /// Raise a SystemError with a message
-pub fn raiseSystemError(comptime message: [*:0]const u8) Null {
+pub fn raiseSystemError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_SystemError(), message);
     return null;
 }
 
 /// Raise a BufferError with a message
-pub fn raiseBufferError(comptime message: [*:0]const u8) Null {
+pub fn raiseBufferError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_BufferError(), message);
     return null;
 }
 
 /// Raise an ArithmeticError with a message
-pub fn raiseArithmeticError(comptime message: [*:0]const u8) Null {
+pub fn raiseArithmeticError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_ArithmeticError(), message);
     return null;
 }
 
 /// Raise a RecursionError with a message
-pub fn raiseRecursionError(comptime message: [*:0]const u8) Null {
+pub fn raiseRecursionError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_RecursionError(), message);
     return null;
 }
 
 /// Raise an AssertionError with a message
-pub fn raiseAssertionError(comptime message: [*:0]const u8) Null {
+pub fn raiseAssertionError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_AssertionError(), message);
     return null;
 }
 
 /// Raise a FloatingPointError with a message
-pub fn raiseFloatingPointError(comptime message: [*:0]const u8) Null {
+pub fn raiseFloatingPointError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_FloatingPointError(), message);
     return null;
 }
 
 /// Raise a LookupError with a message
-pub fn raiseLookupError(comptime message: [*:0]const u8) Null {
+pub fn raiseLookupError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_LookupError(), message);
     return null;
 }
 
 /// Raise a NameError with a message
-pub fn raiseNameError(comptime message: [*:0]const u8) Null {
+pub fn raiseNameError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_NameError(), message);
     return null;
 }
 
 /// Raise an UnboundLocalError with a message
-pub fn raiseUnboundLocalError(comptime message: [*:0]const u8) Null {
+pub fn raiseUnboundLocalError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_UnboundLocalError(), message);
     return null;
 }
 
 /// Raise a ReferenceError with a message
-pub fn raiseReferenceError(comptime message: [*:0]const u8) Null {
+pub fn raiseReferenceError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_ReferenceError(), message);
     return null;
 }
@@ -406,85 +406,85 @@ pub fn raiseStopAsyncIteration() Null {
 }
 
 /// Raise a SyntaxError with a message
-pub fn raiseSyntaxError(comptime message: [*:0]const u8) Null {
+pub fn raiseSyntaxError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_SyntaxError(), message);
     return null;
 }
 
 /// Raise a UnicodeError with a message
-pub fn raiseUnicodeError(comptime message: [*:0]const u8) Null {
+pub fn raiseUnicodeError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_UnicodeError(), message);
     return null;
 }
 
 /// Raise a ModuleNotFoundError with a message
-pub fn raiseModuleNotFoundError(comptime message: [*:0]const u8) Null {
+pub fn raiseModuleNotFoundError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_ModuleNotFoundError(), message);
     return null;
 }
 
 /// Raise a BlockingIOError with a message
-pub fn raiseBlockingIOError(comptime message: [*:0]const u8) Null {
+pub fn raiseBlockingIOError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_BlockingIOError(), message);
     return null;
 }
 
 /// Raise a BrokenPipeError with a message
-pub fn raiseBrokenPipeError(comptime message: [*:0]const u8) Null {
+pub fn raiseBrokenPipeError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_BrokenPipeError(), message);
     return null;
 }
 
 /// Raise a ChildProcessError with a message
-pub fn raiseChildProcessError(comptime message: [*:0]const u8) Null {
+pub fn raiseChildProcessError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_ChildProcessError(), message);
     return null;
 }
 
 /// Raise a ConnectionAbortedError with a message
-pub fn raiseConnectionAbortedError(comptime message: [*:0]const u8) Null {
+pub fn raiseConnectionAbortedError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_ConnectionAbortedError(), message);
     return null;
 }
 
 /// Raise a ConnectionRefusedError with a message
-pub fn raiseConnectionRefusedError(comptime message: [*:0]const u8) Null {
+pub fn raiseConnectionRefusedError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_ConnectionRefusedError(), message);
     return null;
 }
 
 /// Raise a ConnectionResetError with a message
-pub fn raiseConnectionResetError(comptime message: [*:0]const u8) Null {
+pub fn raiseConnectionResetError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_ConnectionResetError(), message);
     return null;
 }
 
 /// Raise a FileExistsError with a message
-pub fn raiseFileExistsError(comptime message: [*:0]const u8) Null {
+pub fn raiseFileExistsError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_FileExistsError(), message);
     return null;
 }
 
 /// Raise an InterruptedError with a message
-pub fn raiseInterruptedError(comptime message: [*:0]const u8) Null {
+pub fn raiseInterruptedError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_InterruptedError(), message);
     return null;
 }
 
 /// Raise an IsADirectoryError with a message
-pub fn raiseIsADirectoryError(comptime message: [*:0]const u8) Null {
+pub fn raiseIsADirectoryError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_IsADirectoryError(), message);
     return null;
 }
 
 /// Raise a NotADirectoryError with a message
-pub fn raiseNotADirectoryError(comptime message: [*:0]const u8) Null {
+pub fn raiseNotADirectoryError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_NotADirectoryError(), message);
     return null;
 }
 
 /// Raise a ProcessLookupError with a message
-pub fn raiseProcessLookupError(comptime message: [*:0]const u8) Null {
+pub fn raiseProcessLookupError(message: [*:0]const u8) Null {
     py.PyErr_SetString(py.PyExc_ProcessLookupError(), message);
     return null;
 }
@@ -879,7 +879,7 @@ pub fn exception(comptime name: [*:0]const u8, comptime opts: anytype) Exception
 }
 
 /// Helper to raise a custom exception
-pub fn raise(exc: *const ExceptionDef, comptime msg: [*:0]const u8) Null {
+pub fn raise(exc: *const ExceptionDef, msg: [*:0]const u8) Null {
     if (exc.exception_type) |exc_type| {
         py.PyErr_SetString(exc_type, msg);
     } else {

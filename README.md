@@ -58,13 +58,15 @@ print(mymodule.add(2, 3))  # 5
 ## Installation
 
 ```bash
-# Download the latest release
-# https://github.com/dzonerzy/PyOZ/releases
+pip install pyoz
+```
 
-# Or build from source
+Or download a prebuilt binary from [GitHub Releases](https://github.com/dzonerzy/PyOZ/releases), or build from source:
+
+```bash
 git clone https://github.com/dzonerzy/PyOZ.git
 cd PyOZ
-zig build
+zig build cli
 ```
 
 ## Getting Started

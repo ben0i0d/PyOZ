@@ -10,18 +10,21 @@ pub const PyProjectConfig = struct {
     python_requires: []const u8 = "",
 
     // [tool.pyoz]
+    module_name: []const u8 = "",
     module_path: []const u8 = "",
     optimize: []const u8 = "",
     strip: bool = false,
     linux_platform_tag: []const u8 = "",
     abi3: bool = false,
     py_packages: std.ArrayListUnmanaged([]const u8) = .{},
+    include_ext: std.ArrayListUnmanaged([]const u8) = .{},
 
     // Track which fields were allocated
     name_allocated: bool = false,
     version_allocated: bool = false,
     description_allocated: bool = false,
     python_requires_allocated: bool = false,
+    module_name_allocated: bool = false,
     module_path_allocated: bool = false,
     optimize_allocated: bool = false,
     linux_platform_tag_allocated: bool = false,
@@ -31,11 +34,14 @@ pub const PyProjectConfig = struct {
         if (self.version_allocated) allocator.free(self.version);
         if (self.description_allocated) allocator.free(self.description);
         if (self.python_requires_allocated) allocator.free(self.python_requires);
+        if (self.module_name_allocated) allocator.free(self.module_name);
         if (self.module_path_allocated) allocator.free(self.module_path);
         if (self.optimize_allocated) allocator.free(self.optimize);
         if (self.linux_platform_tag_allocated) allocator.free(self.linux_platform_tag);
         for (self.py_packages.items) |pkg| allocator.free(pkg);
         self.py_packages.deinit(allocator);
+        for (self.include_ext.items) |ext| allocator.free(ext);
+        self.include_ext.deinit(allocator);
     }
 
     /// Get version with fallback to default
@@ -46,6 +52,11 @@ pub const PyProjectConfig = struct {
     /// Get python_requires with fallback to default
     pub fn getPythonRequires(self: PyProjectConfig) []const u8 {
         return if (self.python_requires.len > 0) self.python_requires else ">=3.8";
+    }
+
+    /// Get module_name with fallback to project name
+    pub fn getModuleName(self: PyProjectConfig) []const u8 {
+        return if (self.module_name.len > 0) self.module_name else self.name;
     }
 
     /// Get module_path with fallback to default
@@ -66,6 +77,27 @@ pub const PyProjectConfig = struct {
     /// Get ABI3 mode (hardcoded to Python 3.8 minimum)
     pub fn getAbi3(self: PyProjectConfig) bool {
         return self.abi3;
+    }
+
+    /// Check if a filename should be included based on include-ext.
+    /// Defaults to .py only if include-ext is not set. Wildcard "*" matches all files.
+    pub fn shouldIncludeFile(self: PyProjectConfig, basename: []const u8) bool {
+        const exts = self.include_ext.items;
+        if (exts.len == 0) {
+            // Default: .py only
+            return std.mem.endsWith(u8, basename, ".py");
+        }
+        for (exts) |ext| {
+            if (std.mem.eql(u8, ext, "*")) return true;
+            // Check if basename ends with ".{ext}"
+            if (ext.len + 1 <= basename.len) {
+                const tail = basename[basename.len - ext.len ..];
+                if (basename[basename.len - ext.len - 1] == '.' and std.mem.eql(u8, tail, ext)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 };
 
@@ -121,7 +153,10 @@ pub fn parse(allocator: std.mem.Allocator, content: []const u8) !PyProjectConfig
                 }
             },
             .tool_pyoz => {
-                if (std.mem.eql(u8, key, "module-path")) {
+                if (std.mem.eql(u8, key, "module-name")) {
+                    config.module_name = try allocator.dupe(u8, value);
+                    config.module_name_allocated = true;
+                } else if (std.mem.eql(u8, key, "module-path")) {
                     config.module_path = try allocator.dupe(u8, value);
                     config.module_path_allocated = true;
                 } else if (std.mem.eql(u8, key, "optimize")) {
@@ -144,6 +179,19 @@ pub fn parse(allocator: std.mem.Allocator, content: []const u8) !PyProjectConfig
                             const stripped = stripQuotes(std.mem.trim(u8, item, &std.ascii.whitespace));
                             if (stripped.len > 0) {
                                 try config.py_packages.append(allocator, try allocator.dupe(u8, stripped));
+                            }
+                        }
+                    }
+                } else if (std.mem.eql(u8, key, "include-ext")) {
+                    // Parse TOML array: ["py", "zig", "json"] or ["*"]
+                    const raw = std.mem.trim(u8, trimmed[eq_pos + 1 ..], &std.ascii.whitespace);
+                    if (raw.len >= 2 and raw[0] == '[' and raw[raw.len - 1] == ']') {
+                        const inner = raw[1 .. raw.len - 1];
+                        var items = std.mem.splitScalar(u8, inner, ',');
+                        while (items.next()) |item| {
+                            const stripped = stripQuotes(std.mem.trim(u8, item, &std.ascii.whitespace));
+                            if (stripped.len > 0) {
+                                try config.include_ext.append(allocator, try allocator.dupe(u8, stripped));
                             }
                         }
                     }
