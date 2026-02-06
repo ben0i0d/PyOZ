@@ -34,6 +34,74 @@ fn getConversions() type {
     return conversion.Conversions;
 }
 
+/// Check if a field name indicates a private field (starts with underscore)
+fn isPrivateField(comptime field_name: []const u8) bool {
+    return field_name.len > 0 and field_name[0] == '_';
+}
+
+/// Map a Zig type to a Python-friendly type name for documentation
+fn zigTypeToPythonName(comptime ZigType: type) []const u8 {
+    return switch (@typeInfo(ZigType)) {
+        .int => |info| if (info.signedness == .signed) "int" else "int",
+        .float => "float",
+        .bool => "bool",
+        .pointer => |ptr| if (ptr.size == .slice and ptr.child == u8) "str" else "object",
+        .optional => |opt| zigTypeToPythonName(opt.child) ++ " | None",
+        .@"enum" => "int",
+        .@"struct" => "object",
+        .array => "list",
+        else => "object",
+    };
+}
+
+/// Auto-generate a docstring for a class from its fields
+/// Produces something like:
+///   ClassName(sec, nsec)
+///
+///   Attributes:
+///       sec: int
+///       nsec: int
+fn generateAutoDoc(
+    comptime name: [*:0]const u8,
+    comptime T: type,
+) [*:0]const u8 {
+    comptime {
+        const struct_info = @typeInfo(T).@"struct";
+        const all_fields = struct_info.fields;
+
+        // Build the signature line: "ClassName(field1, field2)"
+        var doc: []const u8 = std.mem.span(name) ++ "(";
+        var first_sig = true;
+        for (all_fields) |field| {
+            if (isPrivateField(field.name)) continue;
+            if (!first_sig) {
+                doc = doc ++ ", ";
+            }
+            first_sig = false;
+            doc = doc ++ field.name;
+        }
+        doc = doc ++ ")\n\nAttributes:\n";
+
+        // Build attribute list with types
+        for (all_fields) |field| {
+            if (isPrivateField(field.name)) continue;
+            doc = doc ++ "    " ++ field.name ++ ": " ++ zigTypeToPythonName(field.type) ++ "\n";
+        }
+
+        // Convert to null-terminated
+        const final = doc ++ .{0};
+        return final[0 .. final.len - 1 :0];
+    }
+}
+
+/// Lightweight class info for the conversion system — pairs a custom name with a Zig type.
+/// This is what gets threaded through wrappers and conversions so that
+/// getWrapperWithName can produce a single canonical instantiation per class.
+pub const ClassInfo = struct {
+    name: [*:0]const u8,
+    zig_type: type,
+};
+
 /// Configuration for a class definition
 pub const ClassDef = struct {
     name: [*:0]const u8,
@@ -44,6 +112,12 @@ pub const ClassDef = struct {
 pub fn getWrapper(comptime T: type) type {
     // We need a default name - use the type name
     return generateClass(@typeName(T), T);
+}
+
+/// Get the wrapper type for a Zig struct with a custom name
+/// Used by module registration to thread the user's class name through
+pub fn getWrapperWithName(comptime name: [*:0]const u8, comptime T: type) type {
+    return generateClass(name, T);
 }
 
 /// Generate a Python class wrapper for a Zig struct
@@ -109,18 +183,18 @@ fn generateClass(comptime name: [*:0]const u8, comptime T: type) type {
             has_weakref_support,
             is_builtin_subclass,
         );
-        const num = number_mod.NumberProtocol(T, Self);
-        const seq = sequence_mod.SequenceProtocol(T, Self);
-        const map = mapping_mod.MappingProtocol(T, Self);
+        const num = number_mod.NumberProtocol(name, T, Self);
+        const seq = sequence_mod.SequenceProtocol(name, T, Self);
+        const map = mapping_mod.MappingProtocol(name, T, Self);
         const cmp = comparison_mod.ComparisonProtocol(T, Self);
-        const repr = repr_mod.ReprProtocol(T, Self, name);
-        const iter = iterator_mod.IteratorProtocol(T, Self);
+        const repr = repr_mod.ReprProtocol(name, T, Self);
+        const iter = iterator_mod.IteratorProtocol(name, T, Self);
         const buf = buffer_mod.BufferProtocol(T, Self);
-        const desc = descriptor_mod.DescriptorProtocol(T, Self);
-        const attr = attributes_mod.AttributeProtocol(T, Self, name);
-        const call = callable_mod.CallableProtocol(T, Self);
+        const desc = descriptor_mod.DescriptorProtocol(name, T, Self);
+        const attr = attributes_mod.AttributeProtocol(name, T, Self);
+        const call = callable_mod.CallableProtocol(name, T, Self);
         const props = properties_mod.PropertiesBuilder(T, Self);
-        const meths = methods_mod.MethodBuilder(T, PyWrapper);
+        const meths = methods_mod.MethodBuilder(name, T, PyWrapper);
         const gc = gc_protocol.GCBuilder(T, PyWrapper);
 
         // Helper function to get type object pointer (for protocols that need it)
@@ -237,7 +311,7 @@ fn generateClass(comptime name: [*:0]const u8, comptime T: type) type {
                     @compileError("__doc__ must be declared as [*:0]const u8");
                 }
                 break :blk T.__doc__;
-            } else name;
+            } else generateAutoDoc(name, T);
 
             // Lifecycle slots
             if (!is_builtin_subclass) {
@@ -477,7 +551,7 @@ fn generateClass(comptime name: [*:0]const u8, comptime T: type) type {
                     @compileError("__doc__ must be declared as [*:0]const u8");
                 }
                 break :blk T.__doc__;
-            } else name;
+            } else generateAutoDoc(name, T);
             slot_array[idx] = .{ .slot = slots.tp_doc, .pfunc = @ptrCast(@constCast(doc_ptr)) };
             idx += 1;
 

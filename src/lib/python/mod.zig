@@ -149,6 +149,7 @@ pub const PyUnicode_FromString = string.PyUnicode_FromString;
 pub const PyUnicode_FromStringAndSize = string.PyUnicode_FromStringAndSize;
 pub const PyUnicode_AsUTF8 = string.PyUnicode_AsUTF8;
 pub const PyUnicode_AsUTF8AndSize = string.PyUnicode_AsUTF8AndSize;
+pub const PyUnicode_Concat = string.PyUnicode_Concat;
 pub const PyUnicode_FromFormat = string.PyUnicode_FromFormat;
 
 // ============================================================================

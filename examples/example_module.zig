@@ -2662,6 +2662,12 @@ const PrivateFieldsExample = struct {
 };
 
 // ============================================================================
+// Simple class with no custom __repr__ - tests default repr generation
+const SimplePoint = struct {
+    x: f64,
+    y: f64,
+};
+
 // Module Definition
 // ============================================================================
 
@@ -2817,6 +2823,7 @@ const Example = pyoz.module(.{
         pyoz.class("Flexible", Flexible),
         pyoz.class("Temperature", Temperature),
         pyoz.class("PrivateFieldsExample", PrivateFieldsExample),
+        pyoz.class("SimplePoint", SimplePoint),
     },
     .exceptions = &.{
         pyoz.exception("ValidationError", .{ .doc = "Raised when validation fails", .base = .ValueError }),

@@ -129,6 +129,7 @@ pub const PyUnicode_FromString = mod.PyUnicode_FromString;
 pub const PyUnicode_FromStringAndSize = mod.PyUnicode_FromStringAndSize;
 pub const PyUnicode_AsUTF8 = mod.PyUnicode_AsUTF8;
 pub const PyUnicode_AsUTF8AndSize = mod.PyUnicode_AsUTF8AndSize;
+pub const PyUnicode_Concat = mod.PyUnicode_Concat;
 pub const PyUnicode_FromFormat = mod.PyUnicode_FromFormat;
 
 // Tuple operations

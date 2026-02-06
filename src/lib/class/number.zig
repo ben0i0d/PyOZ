@@ -7,13 +7,16 @@ const py = @import("../python.zig");
 const conversion = @import("../conversion.zig");
 const slots = py.slots;
 
-fn getSelfAwareConverter(comptime T: type) type {
-    return conversion.Converter(&[_]type{T});
+const class_mod = @import("mod.zig");
+const ClassInfo = class_mod.ClassInfo;
+
+fn getSelfAwareConverter(comptime name: [*:0]const u8, comptime T: type) type {
+    return conversion.Converter(&[_]ClassInfo{.{ .name = name, .zig_type = T }});
 }
 
 /// Build number protocol for a given type
-pub fn NumberProtocol(comptime T: type, comptime Parent: type) type {
-    const Conv = getSelfAwareConverter(T);
+pub fn NumberProtocol(comptime name: [*:0]const u8, comptime T: type, comptime Parent: type) type {
+    const Conv = getSelfAwareConverter(name, T);
 
     return struct {
         pub fn hasNumberMethods() bool {

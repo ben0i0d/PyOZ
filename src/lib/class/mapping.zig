@@ -8,12 +8,17 @@ const conversion = @import("../conversion.zig");
 const slots = @import("../python/slots.zig");
 const abi = @import("../abi.zig");
 
-fn getConversions() type {
-    return conversion.Conversions;
+const class_mod = @import("mod.zig");
+const ClassInfo = class_mod.ClassInfo;
+
+fn getSelfAwareConverter(comptime name: [*:0]const u8, comptime T: type) type {
+    return conversion.Converter(&[_]ClassInfo{.{ .name = name, .zig_type = T }});
 }
 
 /// Build mapping protocol for a given type
-pub fn MappingProtocol(comptime T: type, comptime Parent: type) type {
+pub fn MappingProtocol(comptime name: [*:0]const u8, comptime T: type, comptime Parent: type) type {
+    const Conv = getSelfAwareConverter(name, T);
+
     return struct {
         pub fn hasMappingMethods() bool {
             return @hasDecl(T, "__getitem__");
@@ -50,7 +55,7 @@ pub fn MappingProtocol(comptime T: type, comptime Parent: type) type {
                 break :blk key_info == .int or key_info == .comptime_int;
             };
 
-            const zig_key = getConversions().fromPy(KeyType, key) catch {
+            const zig_key = Conv.fromPy(KeyType, key) catch {
                 if (is_integer_key) {
                     py.PyErr_SetString(py.PyExc_IndexError(), "Invalid index type");
                 } else {
@@ -70,10 +75,10 @@ pub fn MappingProtocol(comptime T: type, comptime Parent: type) type {
                     }
                     return null;
                 };
-                return getConversions().toPy(@TypeOf(result), result);
+                return Conv.toPy(@TypeOf(result), result);
             } else {
                 const result = T.__getitem__(self.getDataConst(), zig_key);
-                return getConversions().toPy(GetItemRetType, result);
+                return Conv.toPy(GetItemRetType, result);
             }
         }
 
@@ -97,7 +102,7 @@ pub fn MappingProtocol(comptime T: type, comptime Parent: type) type {
                     break :blk key_info == .int or key_info == .comptime_int;
                 };
 
-                const zig_key = getConversions().fromPy(KeyType, key) catch {
+                const zig_key = Conv.fromPy(KeyType, key) catch {
                     if (is_integer_key) {
                         py.PyErr_SetString(py.PyExc_IndexError(), "Invalid index type");
                     } else {
@@ -106,7 +111,7 @@ pub fn MappingProtocol(comptime T: type, comptime Parent: type) type {
                     return -1;
                 };
 
-                const zig_value = getConversions().fromPy(ValueType, value) catch {
+                const zig_value = Conv.fromPy(ValueType, value) catch {
                     py.PyErr_SetString(py.PyExc_TypeError(), "invalid value type for __setitem__");
                     return -1;
                 };
@@ -141,7 +146,7 @@ pub fn MappingProtocol(comptime T: type, comptime Parent: type) type {
                     break :blk key_info == .int or key_info == .comptime_int;
                 };
 
-                const zig_key = getConversions().fromPy(KeyType, key) catch {
+                const zig_key = Conv.fromPy(KeyType, key) catch {
                     if (is_integer_key) {
                         py.PyErr_SetString(py.PyExc_IndexError(), "Invalid index type");
                     } else {

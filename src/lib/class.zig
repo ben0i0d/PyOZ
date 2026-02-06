@@ -28,9 +28,11 @@ const class_mod = @import("class/mod.zig");
 const spec_mod = @import("class/spec.zig");
 
 // Re-export public API
+pub const ClassInfo = class_mod.ClassInfo;
 pub const ClassDef = class_mod.ClassDef;
 pub const class = class_mod.class;
 pub const getWrapper = class_mod.getWrapper;
+pub const getWrapperWithName = class_mod.getWrapperWithName;
 pub const unwrap = class_mod.unwrap;
 pub const createSlotsTuple = class_mod.createSlotsTuple;
 pub const addClassAttributes = class_mod.addClassAttributes;
