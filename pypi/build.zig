@@ -138,21 +138,30 @@ pub fn build(b: *std.Build) void {
     });
     lib.addIncludePath(b.path("../src/miniz"));
 
-    // Link Python
+    // Link Python headers (needed for compilation).
+    // On Linux/macOS, do NOT link against libpython — the symbols are provided
+    // by the Python interpreter at runtime. Linking against a specific version
+    // would hardcode it into the .so, breaking abi3 cross-version compatibility.
+    // On Windows, link against python3.dll (the version-agnostic stable ABI DLL)
+    // instead of python3XX.dll, so the extension works across all Python 3.x.
+    const target_os = target.result.os.tag;
     if (python_config) |python| {
         lib.addIncludePath(.{ .cwd_relative = python.include_dir });
         lib.root_module.addIncludePath(.{ .cwd_relative = python.include_dir });
-        if (python.lib_dir) |lib_dir| {
-            lib.addLibraryPath(.{ .cwd_relative = lib_dir });
+        if (target_os == .windows) {
+            if (python.lib_dir) |lib_dir| {
+                lib.addLibraryPath(.{ .cwd_relative = lib_dir });
+            }
+            // Link against python3.dll (stable ABI), not python3XX.dll
+            lib.linkSystemLibrary("python3");
         }
-        lib.linkSystemLibrary(python.lib_name);
     }
     lib.linkLibC();
 
     // Install as .so (Unix) or .pyd (Windows)
-    const ext = if (builtin.os.tag == .windows) ".pyd" else ".so";
+    const dest_name = if (target_os == .windows) "_pyoz.pyd" else "_pyoz.so";
     const install = b.addInstallArtifact(lib, .{
-        .dest_sub_path = "_pyoz" ++ ext,
+        .dest_sub_path = dest_name,
     });
 
     b.getInstallStep().dependOn(&install.step);
