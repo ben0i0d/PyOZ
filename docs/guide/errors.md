@@ -126,7 +126,7 @@ Return `?T` (optional) to indicate errors via `null`:
 ```zig
 fn safe_sqrt(x: f64) ?f64 {
     if (x < 0) {
-        pyoz.raiseValueError("Cannot take sqrt of negative number");
+        _ = pyoz.raiseValueError("Cannot take sqrt of negative number");
         return null;
     }
     return @sqrt(x);
@@ -144,19 +144,11 @@ fn safe_sqrt(x: f64) ?f64 {
 
 This works with any optional return type (`?i64`, `?f64`, `?[]const u8`, `?*pyoz.PyObject`, etc.).
 
-When your function returns a non-optional type (e.g., `c_int`), you need to discard the return value and return separately:
+!!! warning "Always use optional return types with raise functions"
+    PyOZ-wrapped functions must return `null` (via `?T`) to signal errors to Python. Setting an exception and returning a non-null value causes Python's `SystemError: returned a result with an exception set`.
 
-```zig
-fn validate(n: i64) c_int {
-    if (n < 0) {
-        _ = pyoz.raiseValueError("Value must be non-negative");
-        return -1;
-    }
-    return 0;
-}
-```
+**When returning `null`:**
 
-When returning `null`:
 - If an exception is set: exception propagates to Python
 - If no exception: returns Python `None`
 

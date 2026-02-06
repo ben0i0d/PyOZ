@@ -2793,6 +2793,25 @@ const Line = struct {
     }
 };
 
+// ============================================================================
+// Test: raiseRuntimeError without inline (user bug report)
+// ============================================================================
+
+/// Test that raiseRuntimeError works without inline (one-liner pattern)
+fn test_raise_runtime(value: i64) ?i64 {
+    if (value < 0) return pyoz.raiseRuntimeError("value must be non-negative");
+    return value * 2;
+}
+
+/// Test the two-line discard pattern: _ = pyoz.raiseValueError(...)
+fn test_raise_discard(value: i64) ?i64 {
+    if (value < 0) {
+        _ = pyoz.raiseValueError("value must be non-negative");
+        return null;
+    }
+    return value * 2;
+}
+
 // Module Definition
 // ============================================================================
 
@@ -2927,6 +2946,9 @@ const Example = pyoz.module(.{
         pyoz.func("numpy_complex_scale", numpy_complex_scale, "Scale complex array by real factor"),
         pyoz.func("numpy_complex_dot", numpy_complex_dot, "Hermitian dot product of two complex arrays"),
         pyoz.func("numpy_complex64_sum", numpy_complex64_sum, "Sum complex64 array elements"),
+        // Test: raise* functions without inline (user bug report)
+        pyoz.func("test_raise_runtime", test_raise_runtime, "Test raiseRuntimeError one-liner pattern"),
+        pyoz.func("test_raise_discard", test_raise_discard, "Test raiseValueError discard pattern"),
     },
     .classes = &.{
         pyoz.class("Point", Point),
