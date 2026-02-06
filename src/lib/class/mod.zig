@@ -182,7 +182,7 @@ fn generateClass(comptime name: [*:0]const u8, comptime T: type, comptime class_
         const num = number_mod.NumberProtocol(name, T, Self, class_infos);
         const seq = sequence_mod.SequenceProtocol(name, T, Self, class_infos);
         const map = mapping_mod.MappingProtocol(name, T, Self, class_infos);
-        const cmp = comparison_mod.ComparisonProtocol(T, Self);
+        const cmp = comparison_mod.ComparisonProtocol(T, Self, class_infos);
         const repr = repr_mod.ReprProtocol(name, T, Self, class_infos);
         const iter = iterator_mod.IteratorProtocol(name, T, Self, class_infos);
         const buf = buffer_mod.BufferProtocol(T, Self);

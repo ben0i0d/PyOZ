@@ -532,19 +532,19 @@ pub fn NumberProtocol(comptime _: [*:0]const u8, comptime T: type, comptime Pare
         fn py_nb_int(self_obj: ?*py.PyObject) callconv(.c) ?*py.PyObject {
             const self: *Parent.PyWrapper = @ptrCast(@alignCast(self_obj orelse return null));
             const result = T.__int__(self.getDataConst());
-            return conversion.Conversions.toPy(@TypeOf(result), result);
+            return Conv.toPy(@TypeOf(result), result);
         }
 
         fn py_nb_float(self_obj: ?*py.PyObject) callconv(.c) ?*py.PyObject {
             const self: *Parent.PyWrapper = @ptrCast(@alignCast(self_obj orelse return null));
             const result = T.__float__(self.getDataConst());
-            return conversion.Conversions.toPy(@TypeOf(result), result);
+            return Conv.toPy(@TypeOf(result), result);
         }
 
         fn py_nb_index(self_obj: ?*py.PyObject) callconv(.c) ?*py.PyObject {
             const self: *Parent.PyWrapper = @ptrCast(@alignCast(self_obj orelse return null));
             const result = T.__index__(self.getDataConst());
-            return conversion.Conversions.toPy(@TypeOf(result), result);
+            return Conv.toPy(@TypeOf(result), result);
         }
 
         // In-place operators
