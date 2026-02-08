@@ -30,10 +30,8 @@ pub fn DescriptorProtocol(comptime _: [*:0]const u8, comptime T: type, comptime 
                 if (result) |value| {
                     return Conv.toPy(@TypeOf(value), value);
                 } else {
-                    if (py.PyErr_Occurred() == null) {
-                        py.PyErr_SetString(py.PyExc_AttributeError(), "__get__ returned null");
-                    }
-                    return null;
+                    if (py.PyErr_Occurred() != null) return null;
+                    return py.Py_RETURN_NONE();
                 }
             } else {
                 return Conv.toPy(RetType, result);

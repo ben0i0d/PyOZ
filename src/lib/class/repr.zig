@@ -178,10 +178,8 @@ pub fn ReprProtocol(comptime name: [*:0]const u8, comptime T: type, comptime Par
                 if (result) |value| {
                     return Conv.toPy(@TypeOf(value), value);
                 } else {
-                    if (py.PyErr_Occurred() == null) {
-                        py.PyErr_SetString(py.PyExc_RuntimeError(), "repr/str returned null");
-                    }
-                    return null;
+                    if (py.PyErr_Occurred() != null) return null;
+                    return py.Py_RETURN_NONE();
                 }
             } else {
                 return Conv.toPy(RetType, result);

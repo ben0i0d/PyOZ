@@ -46,10 +46,8 @@ pub fn IteratorProtocol(comptime _: [*:0]const u8, comptime T: type, comptime Pa
                         return Conv.toPy(ResultType, result);
                     }
                 } else {
-                    if (py.PyErr_Occurred() == null) {
-                        py.PyErr_SetString(py.PyExc_RuntimeError(), "__iter__ returned null");
-                    }
-                    return null;
+                    if (py.PyErr_Occurred() != null) return null;
+                    return py.Py_RETURN_NONE();
                 }
             } else {
                 const result = T.__iter__(self.getData());

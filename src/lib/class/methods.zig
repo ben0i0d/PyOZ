@@ -404,10 +404,8 @@ pub fn MethodBuilder(comptime _: [*:0]const u8, comptime T: type, comptime PyWra
                         if (result) |value| {
                             return Conv.toPy(@TypeOf(value), value);
                         } else {
-                            if (py.PyErr_Occurred() == null) {
-                                py.PyErr_SetString(py.PyExc_RuntimeError(), "method returned null");
-                            }
-                            return null;
+                            if (py.PyErr_Occurred() != null) return null;
+                            return py.Py_RETURN_NONE();
                         }
                     } else if (ReturnType == void) {
                         return py.Py_RETURN_NONE();
@@ -511,10 +509,8 @@ pub fn MethodBuilder(comptime _: [*:0]const u8, comptime T: type, comptime PyWra
                         if (result) |value| {
                             return Conv.toPy(@TypeOf(value), value);
                         } else {
-                            if (py.PyErr_Occurred() == null) {
-                                py.PyErr_SetString(py.PyExc_RuntimeError(), "method returned null");
-                            }
-                            return null;
+                            if (py.PyErr_Occurred() != null) return null;
+                            return py.Py_RETURN_NONE();
                         }
                     } else if (ReturnType == void) {
                         return py.Py_RETURN_NONE();
@@ -621,10 +617,8 @@ pub fn MethodBuilder(comptime _: [*:0]const u8, comptime T: type, comptime PyWra
                         if (result) |value| {
                             return Conv.toPy(@TypeOf(value), value);
                         } else {
-                            if (py.PyErr_Occurred() == null) {
-                                py.PyErr_SetString(py.PyExc_RuntimeError(), "method returned null");
-                            }
-                            return null;
+                            if (py.PyErr_Occurred() != null) return null;
+                            return py.Py_RETURN_NONE();
                         }
                     } else if (ReturnType == void) {
                         return py.Py_RETURN_NONE();
