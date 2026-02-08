@@ -108,10 +108,8 @@ pub fn NumberProtocol(comptime _: [*:0]const u8, comptime T: type, comptime Pare
                 if (result) |value| {
                     return Conv.toPy(@TypeOf(value), value);
                 } else {
-                    if (py.PyErr_Occurred() == null) {
-                        py.PyErr_SetString(default_exc, "operation returned null");
-                    }
-                    return null;
+                    if (py.PyErr_Occurred() != null) return null;
+                    return py.Py_RETURN_NONE();
                 }
             } else {
                 return Conv.toPy(RetType, result);

@@ -187,7 +187,7 @@ pub fn LifecycleBuilder(
                     return 0;
                 } else {
                     if (py.PyErr_Occurred() == null) {
-                        py.PyErr_SetString(py.PyExc_TypeError(), "__new__ returned null");
+                        py.PyErr_SetString(py.PyExc_TypeError(), "__new__ returned null, expected an instance");
                     }
                     return -1;
                 }

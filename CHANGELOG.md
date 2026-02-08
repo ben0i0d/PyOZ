@@ -5,6 +5,11 @@ All notable changes to PyOZ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.4] - 2026-02-09
+
+### Fixed
+- **Optional return types from methods raised `RuntimeError` instead of returning `None`** - When a Zig method returned `?T` (optional) and the value was `null`, PyOZ raised `RuntimeError: method returned null` instead of returning Python `None`. This affected instance methods, static methods, class methods, `__call__`, `__get__`, `__iter__`, `__repr__`/`__str__`, and number protocol operations. The method dispatch now correctly returns `None` for null optionals (matching the behavior of standalone functions and the conversion system). Improved error messages for `__len__` and `__new__` optional null returns, which are legitimately errors since Python requires concrete values from those slots.
+
 ## [0.10.3] - 2026-02-07
 
 ### Added

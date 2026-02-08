@@ -50,7 +50,7 @@ pub fn MappingProtocol(comptime _: [*:0]const u8, comptime T: type, comptime Par
                     return @intCast(result);
                 } else {
                     if (py.PyErr_Occurred() == null) {
-                        py.PyErr_SetString(py.PyExc_RuntimeError(), "__len__ returned null");
+                        py.PyErr_SetString(py.PyExc_TypeError(), "__len__ returned null, expected an integer");
                     }
                     return -1;
                 }
