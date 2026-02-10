@@ -55,6 +55,24 @@ pub fn set_length(self: *Point, len: f64) void {
 
 Omit `set_X` to make a read-only property.
 
+### Setter Validation
+
+Setters can return `?void` or `!void` to signal errors, just like other methods:
+
+```zig
+pub fn set_user_data(self: *Sqe, data: u64) ?void {
+    if (data == 0) return pyoz.raiseValueError("`user_data` cannot be set to 0");
+    self._user_data = data;
+}
+
+pub fn set_port(self: *Server, port: u16) !void {
+    if (port < 1024) return error.ReservedPort;
+    self._port = port;
+}
+```
+
+This works for all three property styles: automatic fields with custom `set_X`, computed properties, and `pyoz.property()` declarations.
+
 ## Declarative Properties (`pyoz.property`)
 
 For explicit configuration with documentation:

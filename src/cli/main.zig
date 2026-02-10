@@ -37,6 +37,10 @@ pub fn main() !void {
         try commands.develop(allocator, args[2..]);
     } else if (std.mem.eql(u8, command, "publish")) {
         try commands.publish(allocator, args[2..]);
+    } else if (std.mem.eql(u8, command, "test")) {
+        try commands.runTests(allocator, args[2..]);
+    } else if (std.mem.eql(u8, command, "bench")) {
+        try commands.runBench(allocator, args[2..]);
     } else {
         std.debug.print("Unknown command: {s}\n\n", .{command});
         printUsage();
@@ -59,6 +63,8 @@ fn printUsage() void {
         \\  build         Build the extension module and create wheel
         \\  develop       Build and install in development mode
         \\  publish       Publish to PyPI
+        \\  test          Run embedded tests
+        \\  bench         Run embedded benchmarks
         \\
         \\Options:
         \\  -h, --help     Show this help message

@@ -575,8 +575,23 @@ pub fn generateClassStub(comptime name: []const u8, comptime T: type, comptime b
             result = result ++ "    \"\"\"" ++ asSlice(@field(T, "__doc__")) ++ "\"\"\"\n";
         }
 
+        // Detect if this is a PyOZ subclass
+        const is_pyoz_sub = @hasDecl(T, "__base__") and
+            @TypeOf(T.__base__) == type and
+            @hasDecl(T.__base__, "_is_pyoz_base");
+
         // Fields as class-level annotations (skip private and Ref fields)
+        // For PyOZ subclasses, include parent fields first
         var has_public_fields = false;
+        if (is_pyoz_sub) {
+            const parent_fields = @typeInfo(T.__base__.ParentType).@"struct".fields;
+            for (parent_fields) |field| {
+                if (isPrivateField(field.name)) continue;
+                if (ref_mod.isRefType(field.type)) continue;
+                result = result ++ "    " ++ field.name ++ ": " ++ zigTypeToPython(field.type) ++ "\n";
+                has_public_fields = true;
+            }
+        }
         for (fields) |field| {
             if (isPrivateField(field.name)) continue;
             if (ref_mod.isRefType(field.type)) continue;
@@ -588,8 +603,16 @@ pub fn generateClassStub(comptime name: []const u8, comptime T: type, comptime b
             result = result ++ "\n";
         }
 
-        // __init__ method (skip private and Ref fields)
+        // __init__ method — for PyOZ subclasses, include parent fields first
         result = result ++ "    def __init__(self";
+        if (is_pyoz_sub) {
+            const parent_fields = @typeInfo(T.__base__.ParentType).@"struct".fields;
+            for (parent_fields) |field| {
+                if (isPrivateField(field.name)) continue;
+                if (ref_mod.isRefType(field.type)) continue;
+                result = result ++ ", " ++ field.name ++ ": " ++ zigTypeToPython(field.type);
+            }
+        }
         for (fields) |field| {
             if (isPrivateField(field.name)) continue;
             if (ref_mod.isRefType(field.type)) continue;
@@ -1036,15 +1059,29 @@ pub fn generateModuleStubs(comptime config: anytype) []const u8 {
             const classes = config.classes;
             for (classes) |cls| {
                 const cls_name = std.mem.span(cls.name);
-                var exception_base: ?[]const u8 = null;
-                if (@hasField(@TypeOf(config), "exceptions")) {
-                    for (config.exceptions) |exc| {
-                        if (std.mem.eql(u8, std.mem.span(exc.name), cls_name)) {
-                            exception_base = "Exception";
+                // Check for PyOZ parent class
+                var base_name: ?[]const u8 = null;
+                if (@hasDecl(cls.zig_type, "__base__")) {
+                    const BaseDecl = @TypeOf(cls.zig_type.__base__);
+                    if (BaseDecl == type and @hasDecl(cls.zig_type.__base__, "_is_pyoz_base")) {
+                        const ParentType = cls.zig_type.__base__.ParentType;
+                        // Find parent class name in the classes list
+                        for (classes) |parent_cls| {
+                            if (parent_cls.zig_type == ParentType) {
+                                base_name = std.mem.span(parent_cls.name);
+                            }
                         }
                     }
                 }
-                result = result ++ generateClassStub(cls_name, cls.zig_type, exception_base);
+                // Exception base takes priority if both are set
+                if (@hasField(@TypeOf(config), "exceptions")) {
+                    for (config.exceptions) |exc| {
+                        if (std.mem.eql(u8, std.mem.span(exc.name), cls_name)) {
+                            base_name = "Exception";
+                        }
+                    }
+                }
+                result = result ++ generateClassStub(cls_name, cls.zig_type, base_name);
             }
         }
 

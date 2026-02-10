@@ -152,6 +152,25 @@ All magic methods support three return conventions: plain `T` (always succeeds),
 | `__str__` | User-friendly string (`str(obj)`) |
 | `__hash__` | Hash value for use in sets/dicts |
 
+**`__hash__` and `__eq__` interaction:** Following Python semantics, if you define `__eq__` without `__hash__`, PyOZ automatically makes the class unhashable — calling `hash()` raises `TypeError`, and instances cannot be used in sets or as dict keys. To make an equality-comparable class hashable, define both `__eq__` and `__hash__`:
+
+```zig
+const Point = struct {
+    x: i64,
+    y: i64,
+
+    pub fn __eq__(self: *const Point, other: *const Point) bool {
+        return self.x == other.x and self.y == other.y;
+    }
+
+    pub fn __hash__(self: *const Point) i64 {
+        return self.x *% 31 +% self.y;
+    }
+};
+```
+
+`__hash__` supports plain `i64`, `!i64` (error union), and `?i64` (optional — return `null` to raise `TypeError`).
+
 Both `__repr__` and `__str__` support two signatures:
 
 ```zig
@@ -318,7 +337,7 @@ When an object is garbage-collected, it's pushed onto the freelist instead of be
 
 Only applies to simple types (no `__dict__`, no weakrefs). The freelist is a fixed-size static array — once full, excess objects are freed normally.
 
-### Inheritance
+### Inheritance from Built-in Types
 
 Extend Python built-in types:
 
@@ -329,6 +348,64 @@ pub const __base__ = pyoz.bases.list;  // or pyoz.bases.dict
 Use `pyoz.object(self)` to get the underlying Python object for calling Python API functions.
 
 For dict subclasses, implement `__missing__` to handle missing keys.
+
+### Inheritance Between PyOZ Classes
+
+One PyOZ class can inherit from another using `pyoz.base(Parent)`. The child struct declares `__base__` and embeds the parent as `_parent` (must be the first field):
+
+```zig
+const Animal = struct {
+    name: []const u8,
+    age: i64,
+
+    pub fn speak(self: *const Animal) []const u8 {
+        _ = self;
+        return "...";
+    }
+};
+
+const Dog = struct {
+    pub const __base__ = pyoz.base(Animal);
+
+    _parent: Animal,       // Must be first field, embeds parent data
+    breed: []const u8,     // Child's own field
+
+    pub fn fetch(self: *const Dog) []const u8 {
+        _ = self;
+        return "fetching!";
+    }
+};
+
+pub const Module = pyoz.module(.{
+    .name = "animals",
+    .classes = &.{
+        pyoz.class("Animal", Animal),  // Parent must come first
+        pyoz.class("Dog", Dog),
+    },
+});
+```
+
+Python usage:
+
+```python
+d = Dog("Rex", 3, "Labrador")   # parent fields first, then child fields
+d.name                            # "Rex" — inherited property
+d.speak()                         # "..." — inherited method
+d.breed                           # "Labrador" — own property
+d.fetch()                         # "fetching!" — own method
+isinstance(d, Animal)             # True
+Dog.__mro__                       # [Dog, Animal, object]
+```
+
+Key rules:
+
+- The parent class **must** be listed before the child in the `classes` array (comptime error otherwise)
+- The child's first field must be `_parent: ParentType` (comptime validated)
+- Parent methods and properties are inherited via Python's MRO — no duplication needed
+- The child's `__init__` accepts a flattened argument list: parent public fields first, then child public fields
+- `isinstance()` works correctly — `Dog` instances pass `isinstance(d, Animal)`
+- Functions accepting `*const Animal` will also accept `Dog` instances (via `PyObject_TypeCheck`)
+- Stubs generate `class Dog(Animal):` with the correct flattened constructor signature
 
 ## GC Support
 
@@ -496,6 +573,60 @@ pub fn vertices(self: *const Polygon) ?*pyoz.PyObject {
 ```
 
 > **Note:** `pyoz.Conversions.toPy()` does **not** know about registered classes and will return `null` for class types. Always use `Module.toPy()` when converting class instances manually.
+
+## Strong Object References (`Ref(T)`)
+
+When one PyOZ class needs to hold a reference to another, use `pyoz.Ref(T)` to prevent use-after-free. Without `Ref(T)`, if Python garbage-collects the referenced object while another object still points to it, the pointer becomes dangling.
+
+`Ref(T)` wraps a `?*PyObject` with automatic `Py_IncRef` on `set()` and `Py_DecRef` on `clear()` and object deallocation.
+
+```zig
+const Owner = struct {
+    value: i64,
+};
+
+const Child = struct {
+    _owner: pyoz.Ref(Owner),   // Strong reference — keeps Owner alive
+    tag: i64,
+
+    pub fn get_owner_value(self: *const Child) ?i64 {
+        const owner = self._owner.get(MyModule.registered_classes) orelse return null;
+        return owner.value;
+    }
+
+    pub fn has_owner(self: *const Child) bool {
+        return self._owner.object() != null;
+    }
+};
+```
+
+### Setting a Ref
+
+To set a `Ref`, you need the `*PyObject` of the target. Use `Module.selfObject(T, ptr)` to recover it from a `*const T` data pointer:
+
+```zig
+fn make_child(owner: *const Owner, tag: i64) Child {
+    var child = Child{ .tag = tag, ._owner = .{} };
+    child._owner.set(MyModule.selfObject(Owner, owner));
+    return child;
+}
+```
+
+### Ref API
+
+| Method | Description |
+|--------|-------------|
+| `ref.set(py_obj)` | Store reference (INCREFs new, DECREFs old) |
+| `ref.get(class_infos)` | Get `?*const T` to referenced data |
+| `ref.getMut(class_infos)` | Get `?*T` to referenced data |
+| `ref.object()` | Get raw `?*PyObject` (borrowed) |
+| `ref.clear()` | Release reference (DECREF + set null) |
+
+### Automatic Behavior
+
+- **Excluded from Python**: `Ref` fields are automatically excluded from Python properties, `__init__` parameters, stub generation, and auto-doc signatures — whether the field name starts with `_` or not
+- **Deallocation**: References are released in `tp_dealloc` before the object is freed
+- **Freelist-safe**: References are cleared before freelist push, and `std.mem.zeroes` on pop prevents double-free
 
 ## Stub Customization
 

@@ -118,15 +118,40 @@ fn createWheelZip(
     var z = try zip.ZipWriter.init(allocator, wheel_path);
     defer z.deinit();
 
+    // Detect package mode: module name starts with '_' and a py-package matches project name
+    const is_package_mode = blk: {
+        const mod_name = config.getModuleName();
+        if (mod_name.len > 0 and mod_name[0] == '_') {
+            for (config.py_packages.items) |pkg| {
+                if (std.mem.eql(u8, pkg, config.name)) break :blk true;
+            }
+        }
+        break :blk false;
+    };
+
     // Add the compiled module
-    try z.addFileFromDisk(module_name, module_path);
+    // In package mode, place .so inside the package directory
+    var wheel_module_name: ?[]const u8 = null;
+    defer if (wheel_module_name) |wmn| allocator.free(wmn);
+
+    if (is_package_mode) {
+        wheel_module_name = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ config.name, module_name });
+        try z.addFileFromDisk(wheel_module_name.?, module_path);
+    } else {
+        try z.addFileFromDisk(module_name, module_path);
+    }
 
     // Add the .pyi stub file if provided (from memory content)
     var stub_name: ?[]const u8 = null;
     defer if (stub_name) |sn| allocator.free(sn);
 
     if (stub_content) |sc| {
-        stub_name = try std.fmt.allocPrint(allocator, "{s}.pyi", .{config.name});
+        // In package mode, place .pyi inside the package directory
+        if (is_package_mode) {
+            stub_name = try std.fmt.allocPrint(allocator, "{s}/{s}.pyi", .{ config.name, config.name });
+        } else {
+            stub_name = try std.fmt.allocPrint(allocator, "{s}.pyi", .{config.name});
+        }
         try z.addFile(stub_name.?, sc);
     }
 
@@ -209,7 +234,8 @@ fn createWheelZip(
     var record_buf = std.ArrayListUnmanaged(u8){};
     defer record_buf.deinit(allocator);
 
-    try record_buf.appendSlice(allocator, module_name);
+    // Use the wheel path for the module (may include package prefix)
+    try record_buf.appendSlice(allocator, if (wheel_module_name) |wmn| wmn else module_name);
     try record_buf.appendSlice(allocator, ",,\n");
 
     if (stub_name) |sn| {

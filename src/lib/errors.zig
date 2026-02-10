@@ -57,6 +57,39 @@ pub fn setErrorFromMapping(comptime mappings: []const ErrorMapping, err: anyerro
         }
     }
 
-    // Default: RuntimeError with error name
-    py.PyErr_SetString(py.PyExc_RuntimeError(), err_name.ptr);
+    // Default: map well-known error names to their Python exception types
+    const exc = mapWellKnownError(err_name);
+    py.PyErr_SetString(exc, err_name.ptr);
+}
+
+/// Map Zig error names to their corresponding Python exception types.
+///
+/// First tries an exact match against ExcBase enum field names (covers all
+/// standard Python exceptions like TypeError, ValueError, IndexError, etc.).
+/// Then checks common Zig-idiomatic aliases (e.g., DivisionByZero -> ZeroDivisionError).
+/// Falls back to RuntimeError for unrecognized errors.
+pub fn mapWellKnownError(err_name: []const u8) *py.PyObject {
+    // Exact match against all Python exception names
+    if (std.meta.stringToEnum(ExcBase, err_name)) |exc| {
+        return exc.toPyObject();
+    }
+
+    // Common Zig-idiomatic aliases
+    const eql = std.mem.eql;
+    if (eql(u8, err_name, "DivisionByZero")) return py.PyExc_ZeroDivisionError();
+    if (eql(u8, err_name, "Overflow")) return py.PyExc_OverflowError();
+    if (eql(u8, err_name, "OutOfMemory")) return py.PyExc_MemoryError();
+    if (eql(u8, err_name, "IndexOutOfBounds")) return py.PyExc_IndexError();
+    if (eql(u8, err_name, "KeyNotFound")) return py.PyExc_KeyError();
+    if (eql(u8, err_name, "FileNotFound")) return py.PyExc_FileNotFoundError();
+    if (eql(u8, err_name, "PermissionDenied")) return py.PyExc_PermissionError();
+    if (eql(u8, err_name, "AttributeNotFound")) return py.PyExc_AttributeError();
+    if (eql(u8, err_name, "NotImplemented")) return py.PyExc_NotImplementedError();
+    if (eql(u8, err_name, "NegativeValue") or eql(u8, err_name, "ValueTooLarge") or eql(u8, err_name, "ForbiddenValue") or eql(u8, err_name, "InvalidValue")) return py.PyExc_ValueError();
+    if (eql(u8, err_name, "ConnectionRefused")) return py.PyExc_ConnectionRefusedError();
+    if (eql(u8, err_name, "ConnectionReset")) return py.PyExc_ConnectionResetError();
+    if (eql(u8, err_name, "BrokenPipe")) return py.PyExc_BrokenPipeError();
+    if (eql(u8, err_name, "TimedOut") or eql(u8, err_name, "Timeout")) return py.PyExc_TimeoutError();
+
+    return py.PyExc_RuntimeError();
 }

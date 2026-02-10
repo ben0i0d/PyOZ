@@ -2104,6 +2104,29 @@ const Flexible = struct {
 };
 
 // ============================================================================
+// ValidatedProp - reproduces bug: computed property setter returning ?void
+// ============================================================================
+
+const ValidatedProp = struct {
+    _value: u64,
+
+    pub fn __new__() ValidatedProp {
+        return .{ ._value = 0 };
+    }
+
+    pub fn get_value(self: *const ValidatedProp) ?u64 {
+        if (self._value == 999) return pyoz.raiseRuntimeError("value is in error state");
+        return self._value;
+    }
+
+    pub fn set_value(self: *ValidatedProp, data: u64) ?void {
+        if (data == 0) return pyoz.raiseValueError("`value` cannot be set to 0");
+        self._value = data;
+        return;
+    }
+};
+
+// ============================================================================
 // Enum Example - Color enum that becomes Python IntEnum
 // ============================================================================
 
@@ -2905,6 +2928,16 @@ fn test_raise_discard(value: i64) ?i64 {
     return value * 2;
 }
 
+// ============================================================================
+// Test: pyoz.fmt() for formatted error messages
+// ============================================================================
+
+/// Test pyoz.fmt with raiseValueError
+fn test_fmt_raise(value: i64, limit: i64) ?i64 {
+    if (value > limit) return pyoz.raiseValueError(pyoz.fmt("value {d} exceeds limit {d}", .{ value, limit }));
+    return value;
+}
+
 // Module Definition
 // ============================================================================
 
@@ -3042,6 +3075,7 @@ const Example = pyoz.module(.{
         // Test: raise* functions without inline (user bug report)
         pyoz.func("test_raise_runtime", test_raise_runtime, "Test raiseRuntimeError one-liner pattern"),
         pyoz.func("test_raise_discard", test_raise_discard, "Test raiseValueError discard pattern"),
+        pyoz.func("test_fmt_raise", test_fmt_raise, "Test pyoz.fmt with raiseValueError"),
         // Ref(T) test functions
         pyoz.func("make_ref_child", make_ref_child, "Create a RefChild holding a Ref to an Owner"),
         pyoz.func("make_ref_child_freelist", make_ref_child_freelist, "Create a RefChildFreelist holding a Ref to an Owner"),
@@ -3080,6 +3114,7 @@ const Example = pyoz.module(.{
         pyoz.class("RefChild", RefChild),
         pyoz.class("RefChildFreelist", RefChildFreelist),
         pyoz.class("RefChildPublic", RefChildPublic),
+        pyoz.class("ValidatedProp", ValidatedProp),
     },
     .exceptions = &.{
         pyoz.exception("ValidationError", .{ .doc = "Raised when validation fails", .base = .ValueError }),

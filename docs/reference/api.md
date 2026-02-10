@@ -64,6 +64,47 @@ Define a class from a Zig struct.
 pyoz.class("Point", Point)
 ```
 
+### `pyoz.base(Parent)`
+
+Declare inheritance from another PyOZ class. The child struct must embed the parent as its first field named `_parent`.
+
+```zig
+const Animal = struct {
+    name: []const u8,
+    age: i64,
+
+    pub fn speak(self: *const Animal) []const u8 {
+        return "...";
+    }
+};
+
+const Dog = struct {
+    pub const __base__ = pyoz.base(Animal);
+
+    _parent: Animal,       // Must be first field, must match parent type
+    breed: []const u8,
+
+    pub fn fetch(self: *const Dog) []const u8 {
+        return "fetching!";
+    }
+};
+```
+
+Python constructor accepts flattened fields (parent fields first, then child fields):
+
+```python
+d = Dog("Rex", 3, "Labrador")   # name, age from Animal; breed from Dog
+d.speak()                         # inherited method
+d.fetch()                         # own method
+isinstance(d, Animal)             # True
+```
+
+Rules:
+- Parent class must be listed before child in the `classes` array
+- Child's first field must be `_parent: ParentType`
+- Parent methods and properties are inherited via Python's MRO
+- `isinstance()` and type checks work correctly for subtypes
+
 ## Properties
 
 ### `pyoz.property(config)`
@@ -136,6 +177,18 @@ return null;
 
 All raise functions: `raiseValueError`, `raiseTypeError`, `raiseRuntimeError`, `raiseKeyError`, `raiseIndexError`, `raiseAttributeError`, `raiseMemoryError`, `raiseOSError`, and [many more](../guide/errors.md).
 
+### `pyoz.fmt(comptime format, args)`
+
+Inline string formatter using Zig's `std.fmt` syntax. Returns `[*:0]const u8`.
+
+```zig
+// Use with raise functions for dynamic error messages:
+return pyoz.raiseValueError(pyoz.fmt("value {d} exceeds limit {d}", .{ val, limit }));
+
+// General formatting:
+const msg = pyoz.fmt("hello {s}", .{"world"});
+```
+
 ### Catching Exceptions
 
 ```zig
@@ -198,6 +251,66 @@ pyoz.mapErrorMsg("InvalidInput", .ValueError, "Input is invalid")
 | `pyoz.Path` | `str` or `pathlib.Path` |
 | `pyoz.Decimal` | `decimal.Decimal` |
 
+## Allocator-Backed Returns
+
+### `pyoz.Owned(T)`
+
+Wrapper for returning heap-allocated values. PyOZ converts the inner value to a Python object, then frees the backing memory.
+
+```zig
+fn make_report(count: i64) !pyoz.Owned([]const u8) {
+    const allocator = std.heap.page_allocator;
+    const result = try std.fmt.allocPrint(allocator, "Report: {d} items", .{count});
+    return pyoz.owned(allocator, result);
+}
+```
+
+### `pyoz.owned(allocator, value)`
+
+Create an `Owned` wrapper. Auto-coerces `[]u8` → `[]const u8`.
+
+```zig
+const data = try allocator.alloc(u8, 1024);
+return pyoz.owned(allocator, data);  // returns Owned([]const u8)
+```
+
+Supports `!Owned(T)` (error union) and `?Owned(T)` (optional) return types.
+
+## Strong References
+
+### `pyoz.Ref(T)`
+
+Strong reference to a Python-managed object of type `T`. Prevents use-after-free via automatic refcounting.
+
+```zig
+const Child = struct {
+    _owner: pyoz.Ref(Owner),
+    tag: i64,
+};
+```
+
+| Method | Description |
+|--------|-------------|
+| `ref.set(py_obj)` | Store reference (INCREFs new, DECREFs old) |
+| `ref.get(class_infos)` | Get `?*const T` to referenced data |
+| `ref.getMut(class_infos)` | Get `?*T` to referenced data |
+| `ref.object()` | Get raw `?*PyObject` (borrowed) |
+| `ref.clear()` | Release reference (DECREF + set null) |
+
+Ref fields are automatically excluded from Python properties, `__init__`, and stubs.
+
+### `Module.selfObject(T, ptr)`
+
+Recover the wrapping `*PyObject` from a `*const T` data pointer. Used to obtain the PyObject needed for `Ref(T).set()`.
+
+```zig
+fn make_child(owner: *const Owner, tag: i64) Child {
+    var child = Child{ .tag = tag, ._owner = .{} };
+    child._owner.set(MyModule.selfObject(Owner, owner));
+    return child;
+}
+```
+
 ## GIL Control
 
 ### `pyoz.releaseGIL()`
@@ -259,7 +372,8 @@ const MyClass = struct {
     pub const __doc__: [*:0]const u8 = "Class docstring";
     pub const __frozen__: bool = true;  // Immutable
     pub const __features__ = .{ .dict = true, .weakref = true };
-    pub const __base__ = pyoz.bases.list;  // Inheritance
+    pub const __base__ = pyoz.bases.list;  // Inherit from builtin
+    pub const __base__ = pyoz.base(Parent);  // Inherit from PyOZ class
 };
 ```
 

@@ -33,6 +33,10 @@ pub const PyDecimal_Check = decimal_mod.PyDecimal_Check;
 pub const PyDecimal_FromString = decimal_mod.PyDecimal_FromString;
 pub const PyDecimal_AsString = decimal_mod.PyDecimal_AsString;
 
+const owned_types = @import("types/owned.zig");
+pub const Owned = owned_types.Owned;
+pub const owned = owned_types.owned;
+
 const buffer_types = @import("types/buffer.zig");
 pub const BufferView = buffer_types.BufferView;
 pub const BufferViewMut = buffer_types.BufferViewMut;
@@ -201,6 +205,13 @@ pub fn Converter(comptime class_infos: []const class_mod.ClassInfo) type {
                     // Handle Decimal type
                     if (@hasDecl(T, "_is_pyoz_decimal")) {
                         return PyDecimal_FromString(value.value);
+                    }
+
+                    // Handle Owned type - convert inner value, then free backing memory
+                    if (@hasDecl(T, "_is_pyoz_owned")) {
+                        const result = toPy(T.InnerType, value.value);
+                        owned_types.freeOwnedValue(T.InnerType, value.value, value.allocator);
+                        return result;
                     }
 
                     // Handle tuple returns - convert struct to Python tuple

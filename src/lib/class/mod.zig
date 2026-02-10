@@ -227,25 +227,54 @@ fn generateAutoDoc(
     comptime name: [*:0]const u8,
     comptime T: type,
 ) [*:0]const u8 {
-    comptime {
-        const struct_info = @typeInfo(T).@"struct";
-        const all_fields = struct_info.fields;
+    return generateAutoDocWithParent(name, T, false, void);
+}
 
-        // Build the signature line: "ClassName(field1, field2)"
+fn generateAutoDocWithParent(
+    comptime name: [*:0]const u8,
+    comptime T: type,
+    comptime has_parent: bool,
+    comptime ParentType: type,
+) [*:0]const u8 {
+    comptime {
+        // Build the signature line: "ClassName(parent_field1, ..., child_field1, ...)"
         var doc: []const u8 = std.mem.span(name) ++ "(";
         var first_sig = true;
+
+        // Parent fields first (if PyOZ subclass)
+        if (has_parent) {
+            const parent_fields = @typeInfo(ParentType).@"struct".fields;
+            for (parent_fields) |field| {
+                if (isPrivateField(field.name)) continue;
+                if (ref_mod.isRefType(field.type)) continue;
+                if (!first_sig) doc = doc ++ ", ";
+                first_sig = false;
+                doc = doc ++ field.name;
+            }
+        }
+
+        // Child's own public fields
+        const all_fields = @typeInfo(T).@"struct".fields;
         for (all_fields) |field| {
             if (isPrivateField(field.name)) continue;
             if (ref_mod.isRefType(field.type)) continue;
-            if (!first_sig) {
-                doc = doc ++ ", ";
-            }
+            if (!first_sig) doc = doc ++ ", ";
             first_sig = false;
             doc = doc ++ field.name;
         }
         doc = doc ++ ")\n\nAttributes:\n";
 
-        // Build attribute list with types
+        // Parent attributes
+        if (has_parent) {
+            const parent_fields = @typeInfo(ParentType).@"struct".fields;
+            for (parent_fields) |field| {
+                if (isPrivateField(field.name)) continue;
+                if (ref_mod.isRefType(field.type)) continue;
+                doc = doc ++ "    " ++ field.name ++ ": " ++ zigTypeToPythonName(field.type) ++ "\n";
+            }
+        }
+
+        // Child attributes
         for (all_fields) |field| {
             if (isPrivateField(field.name)) continue;
             if (ref_mod.isRefType(field.type)) continue;
@@ -264,6 +293,7 @@ fn generateAutoDoc(
 pub const ClassInfo = struct {
     name: [*:0]const u8,
     zig_type: type,
+    parent_zig_type: ?type = null,
 };
 
 /// Configuration for a class definition
@@ -301,11 +331,53 @@ fn generateClass(comptime name: [*:0]const u8, comptime T: type, comptime class_
     // Check if this is a "mixin" class that inherits from a Python built-in type
     const is_builtin_subclass = comptime blk: {
         if (!@hasDecl(T, "__base__")) break :blk false;
+        // If __base__ is a PyOZ base, it's NOT a builtin subclass
+        if (@TypeOf(T.__base__) == type) {
+            if (@hasDecl(T.__base__, "_is_pyoz_base")) break :blk false;
+        }
         for (fields) |_| {
             break :blk false;
         }
         break :blk true;
     };
+
+    // Check if this is a child of another PyOZ class
+    const is_pyoz_subclass = comptime blk: {
+        if (!@hasDecl(T, "__base__")) break :blk false;
+        if (@TypeOf(T.__base__) != type) break :blk false;
+        if (!@hasDecl(T.__base__, "_is_pyoz_base")) break :blk false;
+        break :blk true;
+    };
+
+    const ParentZigType = comptime if (is_pyoz_subclass) T.__base__.ParentType else void;
+
+    // Comptime validation for PyOZ subclass layout
+    comptime {
+        if (is_pyoz_subclass) {
+            // Verify the child struct has _parent as its first field
+            if (fields.len == 0) {
+                @compileError("PyOZ subclass " ++ @typeName(T) ++ " must have at least a '_parent: " ++ @typeName(ParentZigType) ++ "' field");
+            }
+            if (!std.mem.eql(u8, fields[0].name, "_parent")) {
+                @compileError("PyOZ subclass " ++ @typeName(T) ++ " must have '_parent' as its first field, found '" ++ fields[0].name ++ "'");
+            }
+            if (fields[0].type != ParentZigType) {
+                @compileError("PyOZ subclass " ++ @typeName(T) ++ " field '_parent' must be of type " ++ @typeName(ParentZigType) ++ ", found " ++ @typeName(fields[0].type));
+            }
+        }
+    }
+
+    // Helper to find the parent class name in class_infos.
+    // When class_infos is empty (getWrapper path), we can't resolve the parent name
+    // — that's fine because the real instantiation with full class_infos happens
+    // via getWrapperWithName inside the module's init().
+    const parent_class_name: ?[*:0]const u8 = comptime if (is_pyoz_subclass) blk: {
+        for (class_infos) |info| {
+            if (info.zig_type == ParentZigType) break :blk info.name;
+        }
+        if (class_infos.len == 0) break :blk null; // getWrapper path — resolved later
+        @compileError("PyOZ subclass " ++ @typeName(T) ++ " parent type " ++ @typeName(ParentZigType) ++ " is not registered in the module's classes list");
+    } else null;
 
     return struct {
         const Self = @This();
@@ -347,6 +419,8 @@ fn generateClass(comptime name: [*:0]const u8, comptime T: type, comptime class_
             has_weakref_support,
             is_builtin_subclass,
             class_infos,
+            is_pyoz_subclass,
+            ParentZigType,
         );
         const num = number_mod.NumberProtocol(name, T, Self, class_infos);
         const seq = sequence_mod.SequenceProtocol(name, T, Self, class_infos);
@@ -461,11 +535,12 @@ fn generateClass(comptime name: [*:0]const u8, comptime T: type, comptime class_
                 obj.tp_weaklistoffset = weakref_struct_offset;
             }
 
-            // Inheritance
+            // Inheritance from Python built-in types (NOT PyOZ subclasses — those
+            // are handled at runtime in initTypeWithName)
             // On Windows, DLL data imports (like PyList_Type) require runtime
             // address resolution. At comptime, we'd get the import thunk address
             // instead of the actual type object. On Unix, comptime works fine.
-            if (@hasDecl(T, "__base__")) {
+            if (@hasDecl(T, "__base__") and !is_pyoz_subclass) {
                 if (@import("builtin").os.tag != .windows) {
                     obj.tp_base = T.__base__();
                 }
@@ -479,7 +554,7 @@ fn generateClass(comptime name: [*:0]const u8, comptime T: type, comptime class_
                     @compileError("__doc__ must be declared as [*:0]const u8");
                 }
                 break :blk T.__doc__;
-            } else generateAutoDoc(name, T);
+            } else generateAutoDocWithParent(name, T, is_pyoz_subclass, ParentZigType);
 
             // Lifecycle slots
             if (!is_builtin_subclass) {
@@ -518,6 +593,9 @@ fn generateClass(comptime name: [*:0]const u8, comptime T: type, comptime class_
             // Hash
             if (@hasDecl(T, "__hash__")) {
                 obj.tp_hash = @ptrCast(&repr.py_hash);
+            } else if (@hasDecl(T, "__eq__")) {
+                // Python semantics: defining __eq__ without __hash__ makes the type unhashable
+                obj.tp_hash = py.c.PyObject_HashNotImplemented;
             }
 
             // Number protocol
@@ -599,7 +677,7 @@ fn generateClass(comptime name: [*:0]const u8, comptime T: type, comptime class_
             if (comptime abi.abi3_enabled) return;
 
             if (@import("builtin").os.tag == .windows) {
-                if (@hasDecl(T, "__base__")) {
+                if (@hasDecl(T, "__base__") and !is_pyoz_subclass) {
                     type_object.tp_base = T.__base__();
                 }
             }
@@ -643,7 +721,11 @@ fn generateClass(comptime name: [*:0]const u8, comptime T: type, comptime class_
             }
 
             // Hash
-            if (@hasDecl(T, "__hash__")) count += 1;
+            if (@hasDecl(T, "__hash__")) {
+                count += 1;
+            } else if (@hasDecl(T, "__eq__")) {
+                count += 1; // PyObject_HashNotImplemented slot
+            }
 
             // Iterator
             if (@hasDecl(T, "__iter__")) count += 1;
@@ -719,7 +801,7 @@ fn generateClass(comptime name: [*:0]const u8, comptime T: type, comptime class_
                     @compileError("__doc__ must be declared as [*:0]const u8");
                 }
                 break :blk T.__doc__;
-            } else generateAutoDoc(name, T);
+            } else generateAutoDocWithParent(name, T, is_pyoz_subclass, ParentZigType);
             slot_array[idx] = .{ .slot = slots.tp_doc, .pfunc = @ptrCast(@constCast(doc_ptr)) };
             idx += 1;
 
@@ -747,6 +829,10 @@ fn generateClass(comptime name: [*:0]const u8, comptime T: type, comptime class_
             // Hash
             if (@hasDecl(T, "__hash__")) {
                 slot_array[idx] = .{ .slot = slots.tp_hash, .pfunc = @ptrCast(@constCast(&repr.py_hash)) };
+                idx += 1;
+            } else if (@hasDecl(T, "__eq__")) {
+                // Python semantics: defining __eq__ without __hash__ makes the type unhashable
+                slot_array[idx] = .{ .slot = slots.tp_hash, .pfunc = @ptrCast(py.c.PyObject_HashNotImplemented) };
                 idx += 1;
             }
 
@@ -850,19 +936,44 @@ fn generateClass(comptime name: [*:0]const u8, comptime T: type, comptime class_
         pub fn initTypeWithName(custom_name: [*:0]const u8) ?*py.PyTypeObject {
             if (comptime abi.abi3_enabled) {
                 // ABI3 mode: use PyType_FromSpec to create heap type
-                // Create a spec with the custom name
                 var spec_with_name = type_spec;
                 spec_with_name.name = custom_name;
-                const type_obj = py.c.PyType_FromSpec(&spec_with_name);
-                if (type_obj == null) {
-                    return null;
+
+                if (comptime is_pyoz_subclass) {
+                    // Use PyType_FromSpecWithBases to set the parent type
+                    const ParentGenerated = getWrapperWithName(parent_class_name.?, ParentZigType, class_infos);
+                    const parent_type_obj = ParentGenerated.getType();
+                    const bases = py.PyTuple_New(1) orelse return null;
+                    const parent_as_obj: *py.PyObject = @ptrCast(@alignCast(parent_type_obj));
+                    py.Py_IncRef(parent_as_obj);
+                    if (py.PyTuple_SetItem(bases, 0, parent_as_obj) < 0) {
+                        py.Py_DecRef(bases);
+                        return null;
+                    }
+                    const spec_mod = @import("spec.zig");
+                    const type_obj = spec_mod.createTypeWithBases(&spec_with_name, bases);
+                    py.Py_DecRef(bases);
+                    if (type_obj == null) return null;
+                    heap_type = type_obj;
+                    return heap_type;
+                } else {
+                    const type_obj = py.c.PyType_FromSpec(&spec_with_name);
+                    if (type_obj == null) {
+                        return null;
+                    }
+                    heap_type = @ptrCast(@alignCast(type_obj));
+                    return heap_type;
                 }
-                heap_type = @ptrCast(@alignCast(type_obj));
-                return heap_type;
             } else {
                 // Non-ABI3 mode: use static type object with PyType_Ready
-                // Override the tp_name with the custom name
                 type_object.tp_name = custom_name;
+
+                if (comptime is_pyoz_subclass) {
+                    // Set tp_base to the parent's type object
+                    const ParentGenerated = getWrapperWithName(parent_class_name.?, ParentZigType, class_infos);
+                    type_object.tp_base = ParentGenerated.getTypeObjectPtr();
+                }
+
                 initBase();
                 if (py.c.PyType_Ready(&type_object) < 0) {
                     return null;

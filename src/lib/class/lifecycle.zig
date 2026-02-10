@@ -20,6 +20,59 @@ fn isPrivateField(comptime name: []const u8) bool {
     return name.len > 0 and name[0] == '_';
 }
 
+/// Comptime helper: build a flattened list of (field_name, field_type, is_parent)
+/// for the Python __init__ constructor of a PyOZ subclass.
+/// Parent's public fields come first, then child's own public fields (excluding _parent).
+fn FlatField(comptime dummy: type) type {
+    _ = dummy;
+    return struct {
+        name: []const u8,
+        field_type: type,
+        is_parent: bool,
+        parent_field_name: []const u8, // parent field name within _parent, or "" for child fields
+    };
+}
+
+fn flattenInitFields(comptime T: type, comptime is_pyoz_sub: bool, comptime ParentType: type) []const FlatField(void) {
+    comptime {
+        var result: [64]FlatField(void) = undefined;
+        var count: usize = 0;
+
+        if (is_pyoz_sub) {
+            // First: parent's public fields
+            const parent_fields = @typeInfo(ParentType).@"struct".fields;
+            for (parent_fields) |pf| {
+                if (isPrivateField(pf.name)) continue;
+                if (ref_mod.isRefType(pf.type)) continue;
+                result[count] = .{
+                    .name = pf.name,
+                    .field_type = pf.type,
+                    .is_parent = true,
+                    .parent_field_name = pf.name,
+                };
+                count += 1;
+            }
+        }
+
+        // Then: child's own public fields
+        const child_fields = @typeInfo(T).@"struct".fields;
+        for (child_fields) |cf| {
+            if (isPrivateField(cf.name)) continue;
+            if (ref_mod.isRefType(cf.type)) continue;
+            result[count] = .{
+                .name = cf.name,
+                .field_type = cf.type,
+                .is_parent = false,
+                .parent_field_name = "",
+            };
+            count += 1;
+        }
+
+        const final: [count]FlatField(void) = result[0..count].*;
+        return &final;
+    }
+}
+
 /// Build lifecycle functions for a given type
 /// In ABI3 mode, type_object_ptr is not used (we get the type from heap_type at runtime)
 pub fn LifecycleBuilder(
@@ -30,12 +83,18 @@ pub fn LifecycleBuilder(
     comptime has_weakref_support: bool,
     comptime is_builtin_subclass: bool,
     comptime class_infos: []const ClassInfo,
+    comptime is_pyoz_subclass: bool,
+    comptime ParentZigType: type,
 ) type {
     const struct_info = @typeInfo(T).@"struct";
     const fields = struct_info.fields;
 
+    // Flattened init fields for PyOZ subclasses (parent public fields + child public fields)
+    const flat_fields = flattenInitFields(T, is_pyoz_subclass, ParentZigType);
+
     // Count public fields (excluding private fields starting with _ and Ref fields)
     const public_field_count = comptime blk: {
+        if (is_pyoz_subclass) break :blk flat_fields.len;
         var count: usize = 0;
         for (fields) |field| {
             if (isPrivateField(field.name)) continue;
@@ -143,22 +202,42 @@ pub fn LifecycleBuilder(
             }
 
             const data = self.getData();
-            comptime var i: usize = 0;
-            inline for (fields) |field| {
-                // Skip private fields - they remain zero-initialized from py_new
-                if (comptime isPrivateField(field.name)) continue;
-                // Skip Ref fields - they are managed internally, not via __init__
-                if (comptime ref_mod.isRefType(field.type)) continue;
 
-                const item = py.PyTuple_GetItem(py_args, @intCast(i)) orelse {
-                    py.PyErr_SetString(py.PyExc_TypeError(), "Failed to get argument");
-                    return -1;
-                };
-                @field(data.*, field.name) = conversion.Converter(class_infos).fromPy(field.type, item) catch {
-                    py.PyErr_SetString(py.PyExc_TypeError(), "Failed to convert argument: " ++ field.name);
-                    return -1;
-                };
-                i += 1;
+            if (comptime is_pyoz_subclass) {
+                // Flattened init: parent public fields first, then child's own public fields
+                inline for (flat_fields, 0..) |ff, i| {
+                    const item = py.PyTuple_GetItem(py_args, @intCast(i)) orelse {
+                        py.PyErr_SetString(py.PyExc_TypeError(), "Failed to get argument");
+                        return -1;
+                    };
+                    const value = conversion.Converter(class_infos).fromPy(ff.field_type, item) catch {
+                        py.PyErr_SetString(py.PyExc_TypeError(), "Failed to convert argument: " ++ ff.name);
+                        return -1;
+                    };
+                    if (ff.is_parent) {
+                        @field(data._parent, ff.parent_field_name) = value;
+                    } else {
+                        @field(data.*, ff.name) = value;
+                    }
+                }
+            } else {
+                comptime var i: usize = 0;
+                inline for (fields) |field| {
+                    // Skip private fields - they remain zero-initialized from py_new
+                    if (comptime isPrivateField(field.name)) continue;
+                    // Skip Ref fields - they are managed internally, not via __init__
+                    if (comptime ref_mod.isRefType(field.type)) continue;
+
+                    const item = py.PyTuple_GetItem(py_args, @intCast(i)) orelse {
+                        py.PyErr_SetString(py.PyExc_TypeError(), "Failed to get argument");
+                        return -1;
+                    };
+                    @field(data.*, field.name) = conversion.Converter(class_infos).fromPy(field.type, item) catch {
+                        py.PyErr_SetString(py.PyExc_TypeError(), "Failed to convert argument: " ++ field.name);
+                        return -1;
+                    };
+                    i += 1;
+                }
             }
 
             return 0;

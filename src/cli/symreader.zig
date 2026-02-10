@@ -123,8 +123,13 @@ fn extractFromElf(allocator: std.mem.Allocator, file: std.fs.File) !?[]const u8 
     return null;
 }
 
-/// Extract stubs from a section with format: "PYOZSTUB" + 8-byte length + content
+/// Extract data from a section with format: magic (8 bytes) + 8-byte length + content
 fn extractFromSection(allocator: std.mem.Allocator, file: std.fs.File, offset: u64, size: u64) !?[]const u8 {
+    return extractFromSectionWithMagic(allocator, file, offset, size, "PYOZSTUB");
+}
+
+/// Generic section extraction with configurable magic string
+fn extractFromSectionWithMagic(allocator: std.mem.Allocator, file: std.fs.File, offset: u64, size: u64, magic: *const [8]u8) !?[]const u8 {
     if (size < 16) return null; // Need at least header
 
     file.seekTo(offset) catch return null;
@@ -133,27 +138,181 @@ fn extractFromSection(allocator: std.mem.Allocator, file: std.fs.File, offset: u
     var header: [16]u8 = undefined;
     _ = file.read(&header) catch return null;
 
-    if (!std.mem.eql(u8, header[0..8], "PYOZSTUB")) return null;
+    if (!std.mem.eql(u8, header[0..8], magic)) return null;
 
     // Read length (little-endian u64)
-    const stubs_len = std.mem.readInt(u64, header[8..16], .little);
-    if (stubs_len == 0 or stubs_len > 1024 * 1024) return null;
-    if (stubs_len + 16 > size) return null;
+    const data_len = std.mem.readInt(u64, header[8..16], .little);
+    if (data_len == 0 or data_len > 1024 * 1024) return null;
+    if (data_len + 16 > size) return null;
 
     // Read content
-    const stubs = allocator.alloc(u8, stubs_len) catch return null;
-    errdefer allocator.free(stubs);
+    const data = allocator.alloc(u8, data_len) catch return null;
+    errdefer allocator.free(data);
 
-    const read_count = file.read(stubs) catch {
-        allocator.free(stubs);
+    const read_count = file.read(data) catch {
+        allocator.free(data);
         return null;
     };
-    if (read_count != stubs_len) {
-        allocator.free(stubs);
+    if (read_count != data_len) {
+        allocator.free(data);
         return null;
     }
 
-    return stubs;
+    return data;
+}
+
+/// Extract data from a named section in a compiled module file.
+/// Searches for the section by name in ELF/PE/MachO format.
+fn extractNamedSection(allocator: std.mem.Allocator, module_path: []const u8, elf_name: []const u8, macho_name: []const u8, magic: *const [8]u8) !?[]const u8 {
+    const file = std.fs.cwd().openFile(module_path, .{}) catch return null;
+    defer file.close();
+
+    var file_magic: [4]u8 = undefined;
+    _ = file.read(&file_magic) catch return null;
+    file.seekTo(0) catch return null;
+
+    if (file_magic[0] == 0x7F and file_magic[1] == 'E' and file_magic[2] == 'L' and file_magic[3] == 'F') {
+        return extractNamedSectionElf(allocator, file, elf_name, magic);
+    }
+    if (file_magic[0] == 'M' and file_magic[1] == 'Z') {
+        return extractNamedSectionPe(allocator, file, elf_name, magic);
+    }
+    if (file_magic[0] == 0xCF and file_magic[1] == 0xFA and file_magic[2] == 0xED and file_magic[3] == 0xFE) {
+        return extractNamedSectionMachO(allocator, file, macho_name, magic);
+    }
+
+    return null;
+}
+
+/// ELF: find a named section and extract its content
+fn extractNamedSectionElf(allocator: std.mem.Allocator, file: std.fs.File, section_name: []const u8, magic: *const [8]u8) !?[]const u8 {
+    const elf = std.elf;
+
+    var ehdr: elf.Elf64_Ehdr = undefined;
+    const bytes_read = file.read(std.mem.asBytes(&ehdr)) catch return null;
+    if (bytes_read != @sizeOf(elf.Elf64_Ehdr)) return null;
+    if (ehdr.e_ident[elf.EI_CLASS] != elf.ELFCLASS64) return null;
+
+    const shstrtab_offset = ehdr.e_shoff + @as(u64, ehdr.e_shstrndx) * @as(u64, ehdr.e_shentsize);
+    file.seekTo(shstrtab_offset) catch return null;
+
+    var shstrtab_shdr: elf.Elf64_Shdr = undefined;
+    _ = file.read(std.mem.asBytes(&shstrtab_shdr)) catch return null;
+
+    const shstrtab = allocator.alloc(u8, shstrtab_shdr.sh_size) catch return null;
+    defer allocator.free(shstrtab);
+    file.seekTo(shstrtab_shdr.sh_offset) catch return null;
+    _ = file.read(shstrtab) catch return null;
+
+    var i: u16 = 0;
+    while (i < ehdr.e_shnum) : (i += 1) {
+        const shdr_offset = ehdr.e_shoff + @as(u64, i) * @as(u64, ehdr.e_shentsize);
+        file.seekTo(shdr_offset) catch continue;
+
+        var shdr: elf.Elf64_Shdr = undefined;
+        _ = file.read(std.mem.asBytes(&shdr)) catch continue;
+
+        const name = std.mem.sliceTo(shstrtab[shdr.sh_name..], 0);
+        if (std.mem.eql(u8, name, section_name)) {
+            return extractFromSectionWithMagic(allocator, file, shdr.sh_offset, shdr.sh_size, magic);
+        }
+    }
+    return null;
+}
+
+/// PE: find a named section and extract its content
+fn extractNamedSectionPe(allocator: std.mem.Allocator, file: std.fs.File, section_name: []const u8, magic: *const [8]u8) !?[]const u8 {
+    var dos_header: [64]u8 = undefined;
+    _ = file.read(&dos_header) catch return null;
+
+    const pe_offset = std.mem.readInt(u32, dos_header[0x3C..0x40], .little);
+    file.seekTo(pe_offset) catch return null;
+
+    var pe_sig: [4]u8 = undefined;
+    _ = file.read(&pe_sig) catch return null;
+    if (!std.mem.eql(u8, &pe_sig, "PE\x00\x00")) return null;
+
+    var coff_header: [20]u8 = undefined;
+    _ = file.read(&coff_header) catch return null;
+
+    const num_sections = std.mem.readInt(u16, coff_header[2..4], .little);
+    const optional_header_size = std.mem.readInt(u16, coff_header[16..18], .little);
+
+    const sections_offset = pe_offset + 24 + optional_header_size;
+    file.seekTo(sections_offset) catch return null;
+
+    // PE section names are 8 chars max; compare prefix
+    const prefix_len = @min(section_name.len, 8);
+
+    var i: u16 = 0;
+    while (i < num_sections) : (i += 1) {
+        var section_header: [40]u8 = undefined;
+        _ = file.read(&section_header) catch return null;
+
+        const sec_name = std.mem.sliceTo(section_header[0..8], 0);
+        if (sec_name.len >= prefix_len and std.mem.startsWith(u8, sec_name, section_name[0..prefix_len])) {
+            const raw_offset = std.mem.readInt(u32, section_header[20..24], .little);
+            const raw_size = std.mem.readInt(u32, section_header[16..20], .little);
+            return extractFromSectionWithMagic(allocator, file, raw_offset, raw_size, magic);
+        }
+    }
+    return null;
+}
+
+/// MachO: find a named section and extract its content
+fn extractNamedSectionMachO(allocator: std.mem.Allocator, file: std.fs.File, section_name: []const u8, magic_bytes: *const [8]u8) !?[]const u8 {
+    var header: [32]u8 = undefined;
+    _ = file.read(&header) catch return null;
+
+    const ncmds = std.mem.readInt(u32, header[16..20], .little);
+
+    var cmd_offset: u64 = 32;
+    var i: u32 = 0;
+    while (i < ncmds) : (i += 1) {
+        file.seekTo(cmd_offset) catch break;
+
+        var cmd_header: [8]u8 = undefined;
+        _ = file.read(&cmd_header) catch break;
+
+        const cmd = std.mem.readInt(u32, cmd_header[0..4], .little);
+        const cmdsize = std.mem.readInt(u32, cmd_header[4..8], .little);
+
+        if (cmd == LC_SEGMENT_64) {
+            var seg_cmd: [72]u8 = undefined;
+            file.seekTo(cmd_offset) catch break;
+            _ = file.read(&seg_cmd) catch break;
+
+            const nsects = std.mem.readInt(u32, seg_cmd[64..68], .little);
+            var sect_offset: u64 = cmd_offset + 72;
+
+            var s: u32 = 0;
+            while (s < nsects) : (s += 1) {
+                file.seekTo(sect_offset) catch break;
+                var sect_hdr: [80]u8 = undefined;
+                _ = file.read(&sect_hdr) catch break;
+
+                const sect_name = std.mem.sliceTo(sect_hdr[0..16], 0);
+                if (std.mem.eql(u8, sect_name, section_name)) {
+                    const sect_file_offset: u64 = std.mem.readInt(u32, sect_hdr[48..52], .little);
+                    const sect_size: u64 = std.mem.readInt(u64, sect_hdr[40..48], .little);
+                    return extractFromSectionWithMagic(allocator, file, sect_file_offset, sect_size, magic_bytes);
+                }
+                sect_offset += 80;
+            }
+        }
+        cmd_offset += cmdsize;
+    }
+    return null;
+}
+
+/// Read test data directly from a compiled module file
+pub fn extractTests(allocator: std.mem.Allocator, module_path: []const u8) !?[]const u8 {
+    return extractNamedSection(allocator, module_path, ".pyoztest", "__pyoztest", "PYOZTEST");
+}
+
+/// Read benchmark data directly from a compiled module file
+pub fn extractBenchmarks(allocator: std.mem.Allocator, module_path: []const u8) !?[]const u8 {
+    return extractNamedSection(allocator, module_path, ".pyozbenc", "__pyozbenc", "PYOZBENC");
 }
 
 fn findElfSymbol(

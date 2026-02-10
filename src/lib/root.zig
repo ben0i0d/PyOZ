@@ -172,6 +172,14 @@ pub const Ref = ref_mod.Ref;
 pub const isRefType = ref_mod.isRefType;
 
 // =============================================================================
+// Owned (allocator-backed return values)
+// =============================================================================
+
+const owned_mod = @import("types/owned.zig");
+pub const Owned = owned_mod.Owned;
+pub const owned = owned_mod.owned;
+
+// =============================================================================
 // GIL Control
 // =============================================================================
 
@@ -199,6 +207,22 @@ const bases_mod = @import("bases.zig");
 pub const bases = bases_mod.bases;
 pub const object = bases_mod.object;
 
+/// Declare a PyOZ class as the base for inheritance.
+/// The child struct must embed its parent as the first field named `_parent`.
+///
+/// Usage:
+///   const Dog = struct {
+///       pub const __base__ = pyoz.base(Animal);
+///       _parent: Animal,
+///       breed: []const u8,
+///   };
+pub fn base(comptime Parent: type) type {
+    return struct {
+        pub const _is_pyoz_base = true;
+        pub const ParentType = Parent;
+    };
+}
+
 // =============================================================================
 // Conversion
 // =============================================================================
@@ -224,6 +248,19 @@ pub const catchException = exceptions_mod.catchException;
 pub const exceptionPending = exceptions_mod.exceptionPending;
 pub const clearException = exceptions_mod.clearException;
 pub const Null = exceptions_mod.Null;
+
+/// Format a string using Zig's std.fmt, returning a null-terminated pointer.
+/// Safe to pass to any function that copies the string immediately (e.g. PyErr_SetString).
+/// The buffer lives in the caller's stack frame since this function is inline.
+///
+/// Usage:
+///   return pyoz.raiseValueError(pyoz.fmt("{d} went wrong!", .{42}));
+///   const msg = pyoz.fmt("hello {s}", .{"world"});
+pub inline fn fmt(comptime format: []const u8, args: anytype) [*:0]const u8 {
+    var buf: [4096]u8 = undefined;
+    return (std.fmt.bufPrintZ(&buf, format, args) catch return "fmt: message too long").ptr;
+}
+
 pub const raiseException = exceptions_mod.raiseException;
 pub const raiseValueError = exceptions_mod.raiseValueError;
 pub const raiseTypeError = exceptions_mod.raiseTypeError;
@@ -345,7 +382,30 @@ fn extractClassInfo(comptime classes: anytype) []const class_mod.ClassInfo {
     comptime {
         var infos: [classes.len]class_mod.ClassInfo = undefined;
         for (classes, 0..) |cls, i| {
-            infos[i] = .{ .name = cls.name, .zig_type = cls.zig_type };
+            // Detect PyOZ parent class via __base__._is_pyoz_base marker
+            const parent_type: ?type = blk: {
+                if (!@hasDecl(cls.zig_type, "__base__")) break :blk null;
+                const BaseDecl = @TypeOf(cls.zig_type.__base__);
+                if (BaseDecl != type) break :blk null;
+                const BaseType = cls.zig_type.__base__;
+                if (!@hasDecl(BaseType, "_is_pyoz_base")) break :blk null;
+                break :blk BaseType.ParentType;
+            };
+            // Validate parent is listed before child
+            if (parent_type) |pt| {
+                var found = false;
+                for (infos[0..i]) |prev| {
+                    if (prev.zig_type == pt) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    @compileError("PyOZ class inheritance: parent class must be listed before child class in the classes array");
+                }
+            }
+
+            infos[i] = .{ .name = cls.name, .zig_type = cls.zig_type, .parent_zig_type = parent_type };
         }
         const final = infos;
         return &final;
@@ -433,6 +493,41 @@ pub fn constant(comptime name: [*:0]const u8, comptime value: anytype) ConstDef 
 }
 
 // =============================================================================
+// Test definitions
+// =============================================================================
+
+/// A single inline test case definition
+pub const TestDef = struct {
+    name: []const u8,
+    body: []const u8,
+    exception: ?[]const u8, // null = assert test, non-null = assertRaises
+};
+
+/// Create a test definition (assert-style).
+/// The body is Python code that runs inside a unittest method.
+pub fn @"test"(comptime name: []const u8, comptime body: []const u8) TestDef {
+    return .{ .name = name, .body = body, .exception = null };
+}
+
+/// Create a test definition that expects an exception.
+/// The body is Python code that should raise the given exception.
+pub fn testRaises(comptime name: []const u8, comptime exc: []const u8, comptime body: []const u8) TestDef {
+    return .{ .name = name, .body = body, .exception = exc };
+}
+
+/// A single inline benchmark definition
+pub const BenchDef = struct {
+    name: []const u8,
+    body: []const u8,
+};
+
+/// Create a benchmark definition.
+/// The body is Python code to time.
+pub fn bench(comptime name: []const u8, comptime body: []const u8) BenchDef {
+    return .{ .name = name, .body = body };
+}
+
+// =============================================================================
 // Property definition
 // =============================================================================
 
@@ -496,6 +591,154 @@ pub fn property(comptime config: anytype) type {
     return Property(@TypeOf(config));
 }
 
+// =============================================================================
+// Test/Bench content generators (comptime)
+// =============================================================================
+
+/// Convert a test name to a valid Python function name.
+/// "add returns correct result" -> "add_returns_correct_result"
+fn slugify(comptime name: []const u8) []const u8 {
+    comptime {
+        var result: [name.len]u8 = undefined;
+        for (name, 0..) |c, i| {
+            if (c == ' ' or c == '-' or c == '.' or c == '/' or c == '\\') {
+                result[i] = '_';
+            } else if (c >= 'A' and c <= 'Z') {
+                result[i] = c + 32; // lowercase
+            } else if ((c >= 'a' and c <= 'z') or (c >= '0' and c <= '9') or c == '_') {
+                result[i] = c;
+            } else {
+                result[i] = '_';
+            }
+        }
+        const final = result;
+        return &final;
+    }
+}
+
+/// Capitalize the first letter of a string.
+/// "mymod" -> "Mymod"
+fn capitalizeFirst(comptime s: []const u8) []const u8 {
+    comptime {
+        if (s.len == 0) return s;
+        var result: [s.len]u8 = undefined;
+        result[0] = if (s[0] >= 'a' and s[0] <= 'z') s[0] - 32 else s[0];
+        for (s[1..], 1..) |c, i| {
+            result[i] = c;
+        }
+        const final = result;
+        return &final;
+    }
+}
+
+/// Indent each line of a multiline string by the given number of spaces.
+fn indentLines(comptime body: []const u8, comptime spaces: usize) []const u8 {
+    comptime {
+        const indent = " " ** spaces;
+        var result: []const u8 = "";
+        var start: usize = 0;
+        for (body, 0..) |c, i| {
+            if (c == '\n') {
+                result = result ++ indent ++ body[start..i] ++ "\n";
+                start = i + 1;
+            }
+        }
+        // Last line (no trailing newline)
+        if (start < body.len) {
+            result = result ++ indent ++ body[start..] ++ "\n";
+        }
+        return result;
+    }
+}
+
+/// Generate a complete Python unittest file from inline test definitions.
+fn generateTestContent(comptime config: anytype) []const u8 {
+    comptime {
+        const tests_list = if (@hasField(@TypeOf(config), "tests")) config.tests else &[_]TestDef{};
+        if (tests_list.len == 0) return "";
+
+        const mod_name: []const u8 = blk: {
+            var len: usize = 0;
+            while (config.name[len] != 0) : (len += 1) {}
+            break :blk config.name[0..len];
+        };
+
+        var result: []const u8 =
+            "import unittest\n" ++
+            "import " ++ mod_name ++ "\n" ++
+            "\n" ++
+            "\n" ++
+            "class Test" ++ capitalizeFirst(mod_name) ++ "(unittest.TestCase):\n";
+
+        for (tests_list) |t| {
+            const method_name = "test_" ++ slugify(t.name);
+            result = result ++ "    def " ++ method_name ++ "(self):\n";
+
+            if (t.exception) |exc| {
+                // assertRaises style
+                result = result ++ "        with self.assertRaises(" ++ exc ++ "):\n";
+                result = result ++ indentLines(t.body, 12);
+            } else {
+                // Plain assert style
+                result = result ++ indentLines(t.body, 8);
+            }
+            result = result ++ "\n";
+        }
+
+        result = result ++
+            "\n" ++
+            "if __name__ == \"__main__\":\n" ++
+            "    unittest.main()\n";
+
+        return result;
+    }
+}
+
+/// Generate a complete Python benchmark script from inline benchmark definitions.
+fn generateBenchContent(comptime config: anytype) []const u8 {
+    comptime {
+        const bench_list = if (@hasField(@TypeOf(config), "benchmarks")) config.benchmarks else &[_]BenchDef{};
+        if (bench_list.len == 0) return "";
+
+        const mod_name: []const u8 = blk: {
+            var len: usize = 0;
+            while (config.name[len] != 0) : (len += 1) {}
+            break :blk config.name[0..len];
+        };
+
+        var result: []const u8 =
+            "import timeit\n" ++
+            "import " ++ mod_name ++ "\n" ++
+            "\n" ++
+            "\n" ++
+            "def run_benchmarks():\n" ++
+            "    results = []\n";
+
+        for (bench_list) |b| {
+            const fn_name = "bench_" ++ slugify(b.name);
+            result = result ++ "    def " ++ fn_name ++ "():\n";
+            result = result ++ indentLines(b.body, 8);
+            result = result ++ "    t = timeit.timeit(" ++ fn_name ++ ", number=100000)\n";
+            result = result ++ "    results.append((\"" ++ b.name ++ "\", t))\n\n";
+        }
+
+        result = result ++
+            "    print()\n" ++
+            "    print(\"Benchmark Results:\")\n" ++
+            "    print(\"-\" * 60)\n" ++
+            "    for name, elapsed in results:\n" ++
+            "        ops = 100000 / elapsed\n" ++
+            "        print(f\"  {name:<40} {ops:>12,.0f} ops/s\")\n" ++
+            "    print(\"-\" * 60)\n" ++
+            "\n" ++
+            "\n" ++
+            "if __name__ == \"__main__\":\n" ++
+            "    run_benchmarks()\n";
+
+        return result;
+    }
+}
+
 /// Create a Python module from configuration
 pub fn module(comptime config: anytype) type {
     const classes = config.classes;
@@ -511,6 +754,9 @@ pub fn module(comptime config: anytype) type {
     const num_legacy_str_enums = legacy_str_enums.len;
     const consts = if (@hasField(@TypeOf(config), "consts")) config.consts else &[_]ConstDef{};
     const num_consts = consts.len;
+    // Inline test/benchmark definitions (optional)
+    _ = if (@hasField(@TypeOf(config), "tests")) config.tests else &[_]TestDef{};
+    _ = if (@hasField(@TypeOf(config), "benchmarks")) config.benchmarks else &[_]BenchDef{};
 
     // Detect at comptime if this module uses Decimal or DateTime types
     const needs_decimal_init = anyFuncUsesDecimal(funcs);
@@ -883,6 +1129,62 @@ pub fn module(comptime config: anytype) type {
         // Force the section data to be retained by exporting it
         comptime {
             @export(&__pyoz_stubs_section__, .{ .name = "__pyoz_stubs_section__" });
+        }
+
+        /// Test data embedded in a named section (same pattern as stubs).
+        /// Format: 8-byte magic "PYOZTEST", 8-byte little-endian length, then content.
+        const __pyoz_tests_slice__: []const u8 = blk: {
+            @setEvalBranchQuota(100000);
+            break :blk generateTestContent(config);
+        };
+
+        const pyoz_test_section_name = if (builtin.os.tag == .macos) "__DATA,__pyoztest" else ".pyoztest";
+        pub const __pyoz_tests_section__: [16 + __pyoz_tests_slice__.len]u8 linksection(pyoz_test_section_name) = blk: {
+            var data: [16 + __pyoz_tests_slice__.len]u8 = undefined;
+            @memcpy(data[0..8], "PYOZTEST");
+            const len = __pyoz_tests_slice__.len;
+            data[8] = @truncate(len);
+            data[9] = @truncate(len >> 8);
+            data[10] = @truncate(len >> 16);
+            data[11] = @truncate(len >> 24);
+            data[12] = @truncate(len >> 32);
+            data[13] = @truncate(len >> 40);
+            data[14] = @truncate(len >> 48);
+            data[15] = @truncate(len >> 56);
+            @memcpy(data[16..], __pyoz_tests_slice__);
+            break :blk data;
+        };
+
+        comptime {
+            @export(&__pyoz_tests_section__, .{ .name = "__pyoz_tests_section__" });
+        }
+
+        /// Benchmark data embedded in a named section.
+        /// Format: 8-byte magic "PYOZBENC", 8-byte little-endian length, then content.
+        const __pyoz_bench_slice__: []const u8 = blk: {
+            @setEvalBranchQuota(100000);
+            break :blk generateBenchContent(config);
+        };
+
+        const pyoz_bench_section_name = if (builtin.os.tag == .macos) "__DATA,__pyozbenc" else ".pyozbenc";
+        pub const __pyoz_bench_section__: [16 + __pyoz_bench_slice__.len]u8 linksection(pyoz_bench_section_name) = blk: {
+            var data: [16 + __pyoz_bench_slice__.len]u8 = undefined;
+            @memcpy(data[0..8], "PYOZBENC");
+            const len = __pyoz_bench_slice__.len;
+            data[8] = @truncate(len);
+            data[9] = @truncate(len >> 8);
+            data[10] = @truncate(len >> 16);
+            data[11] = @truncate(len >> 24);
+            data[12] = @truncate(len >> 32);
+            data[13] = @truncate(len >> 40);
+            data[14] = @truncate(len >> 48);
+            data[15] = @truncate(len >> 56);
+            @memcpy(data[16..], __pyoz_bench_slice__);
+            break :blk data;
+        };
+
+        comptime {
+            @export(&__pyoz_bench_section__, .{ .name = "__pyoz_bench_section__" });
         }
     };
 }

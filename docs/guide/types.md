@@ -37,6 +37,7 @@ PyOZ provides wrapper types for Python's specialized types:
 | `pyoz.Bytes` | `bytes` | Byte sequences |
 | `pyoz.Path` | `str` or `pathlib.Path` | File paths (accepts both) |
 | `pyoz.Decimal` | `decimal.Decimal` | Arbitrary precision decimals |
+| `pyoz.Owned(T)` | (same as `T`) | Allocator-backed return values |
 
 Create them with `.init()` methods (e.g., `pyoz.Date.init(2024, 12, 25)`).
 
@@ -138,6 +139,26 @@ Zero-copy access to NumPy arrays:
 **Methods:** `.len()`, `.rows()`, `.cols()`, `.data` (slice), `.fill(value)` (mutable only)
 
 Access data directly via `.data` slice for maximum performance.
+
+## Allocator-Backed Returns (`Owned`)
+
+When you need to return dynamically-sized data (e.g., formatted strings, variable-length arrays), use `pyoz.Owned(T)` instead of fixed-size stack buffers. `Owned(T)` pairs a heap-allocated value with its allocator — PyOZ converts the value to a Python object, then frees the backing memory automatically.
+
+```zig
+fn generate_report(count: i64) !pyoz.Owned([]const u8) {
+    const allocator = std.heap.page_allocator;
+    const result = try std.fmt.allocPrint(allocator, "Processed {d} items", .{count});
+    return pyoz.owned(allocator, result);  // []u8 auto-coerced to []const u8
+}
+```
+
+The `pyoz.owned(allocator, value)` constructor automatically coerces mutable slices (`[]u8`) to const (`[]const u8`), so `std.fmt.allocPrint` and `allocator.alloc` results work directly without `@as` casts.
+
+**Supported wrappers:** `!Owned(T)` (error union) and `?Owned(T)` (optional) both work — PyOZ unwraps them before converting.
+
+**Why not stack buffers?** A common pattern is `var buf: [4096]u8 = undefined;` — this works for small strings because `toPy` copies the data immediately, but it silently truncates output beyond 4096 bytes and is fragile. `Owned(T)` has no size limit and makes the allocation/deallocation explicit.
+
+**Supported inner types:** Any slice type that PyOZ can convert — `[]const u8` (→ `str`), `[]const i64` (→ `list[int]`), etc.
 
 ## Class Instances
 
@@ -250,6 +271,7 @@ fn run_hook(callback: pyoz.Callable(void), value: i64) bool {
 | Input only | `[N]T` | list (exact size) |
 | Output only | Slices, Dict, Set | list, dict, set |
 | Output only | Anonymous struct | tuple |
+| Output only | `pyoz.Owned(T)` | Same as `T` (frees backing memory) |
 
 ## Next Steps
 

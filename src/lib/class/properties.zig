@@ -254,10 +254,19 @@ pub fn PropertiesBuilder(comptime T: type, comptime Parent: type, comptime class
                         const RetType = setter_info.return_type orelse void;
                         if (@typeInfo(RetType) == .error_union) {
                             custom_setter(self.getData(), converted) catch |err| {
-                                const msg = @errorName(err);
-                                py.PyErr_SetString(py.PyExc_ValueError(), msg.ptr);
+                                if (py.PyErr_Occurred() == null) {
+                                    const msg = @errorName(err);
+                                    py.PyErr_SetString(py.PyExc_ValueError(), msg.ptr);
+                                }
                                 return -1;
                             };
+                        } else if (@typeInfo(RetType) == .optional) {
+                            if (custom_setter(self.getData(), converted) == null) {
+                                if (py.PyErr_Occurred() == null) {
+                                    py.PyErr_SetString(py.PyExc_ValueError(), "setter failed for: " ++ field_name);
+                                }
+                                return -1;
+                            }
                         } else {
                             custom_setter(self.getData(), converted);
                         }
@@ -316,7 +325,25 @@ pub fn PropertiesBuilder(comptime T: type, comptime Parent: type, comptime class
                         py.PyErr_SetString(py.PyExc_TypeError(), "Failed to convert value for property: " ++ prop_name);
                         return -1;
                     };
-                    setter(self.getData(), converted);
+                    const RetType = setter_info.return_type orelse void;
+                    if (@typeInfo(RetType) == .error_union) {
+                        setter(self.getData(), converted) catch |err| {
+                            if (py.PyErr_Occurred() == null) {
+                                const msg = @errorName(err);
+                                py.PyErr_SetString(py.PyExc_ValueError(), msg.ptr);
+                            }
+                            return -1;
+                        };
+                    } else if (@typeInfo(RetType) == .optional) {
+                        if (setter(self.getData(), converted) == null) {
+                            if (py.PyErr_Occurred() == null) {
+                                py.PyErr_SetString(py.PyExc_ValueError(), "setter failed for property: " ++ prop_name);
+                            }
+                            return -1;
+                        }
+                    } else {
+                        setter(self.getData(), converted);
+                    }
                     return 0;
                 }
             }.set;
@@ -380,7 +407,25 @@ pub fn PropertiesBuilder(comptime T: type, comptime Parent: type, comptime class
                         py.PyErr_SetString(py.PyExc_TypeError(), "Failed to convert value for property: " ++ prop_name);
                         return -1;
                     };
-                    setter(self.getData(), converted);
+                    const RetType = setter_info.return_type orelse void;
+                    if (@typeInfo(RetType) == .error_union) {
+                        setter(self.getData(), converted) catch |err| {
+                            if (py.PyErr_Occurred() == null) {
+                                const msg = @errorName(err);
+                                py.PyErr_SetString(py.PyExc_ValueError(), msg.ptr);
+                            }
+                            return -1;
+                        };
+                    } else if (@typeInfo(RetType) == .optional) {
+                        if (setter(self.getData(), converted) == null) {
+                            if (py.PyErr_Occurred() == null) {
+                                py.PyErr_SetString(py.PyExc_ValueError(), "setter failed for property: " ++ prop_name);
+                            }
+                            return -1;
+                        }
+                    } else {
+                        setter(self.getData(), converted);
+                    }
                     return 0;
                 }
             }.set;

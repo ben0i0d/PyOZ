@@ -13,11 +13,72 @@ fn divide(a: f64, b: f64) !f64 {
 }
 ```
 
-By default, errors become `RuntimeError` with the error name as the message. Use error mappings for specific exception types.
+PyOZ automatically maps well-known error names to the correct Python exception type. For example, `error.TypeError` becomes `TypeError`, `error.DivisionByZero` becomes `ZeroDivisionError`, and `error.KeyNotFound` becomes `KeyError`. Unrecognized errors fall back to `RuntimeError` with the error name as message.
 
-## Error Mapping
+### Automatic Error Mapping
 
-Map Zig errors to Python exception types at the module level:
+The following Zig error names are automatically mapped without any configuration:
+
+| Zig Error Name | Python Exception |
+|----------------|------------------|
+| `error.TypeError` | `TypeError` |
+| `error.ValueError` | `ValueError` |
+| `error.IndexError` | `IndexError` |
+| `error.KeyError` | `KeyError` |
+| `error.AttributeError` | `AttributeError` |
+| `error.RuntimeError` | `RuntimeError` |
+| `error.StopIteration` | `StopIteration` |
+| `error.OverflowError` | `OverflowError` |
+| `error.ZeroDivisionError` | `ZeroDivisionError` |
+| `error.FileNotFoundError` | `FileNotFoundError` |
+| `error.PermissionError` | `PermissionError` |
+| `error.NotImplementedError` | `NotImplementedError` |
+| `error.MemoryError` | `MemoryError` |
+| `error.TimeoutError` | `TimeoutError` |
+| `error.ConnectionError` | `ConnectionError` |
+| `error.IOError` | `OSError` |
+| `error.ImportError` | `ImportError` |
+| Any `ExcBase` variant | Matching Python exception |
+
+Common Zig-idiomatic names are also recognized:
+
+| Zig Error Name | Python Exception |
+|----------------|------------------|
+| `error.DivisionByZero` | `ZeroDivisionError` |
+| `error.Overflow` | `OverflowError` |
+| `error.OutOfMemory` | `MemoryError` |
+| `error.IndexOutOfBounds` | `IndexError` |
+| `error.KeyNotFound` | `KeyError` |
+| `error.FileNotFound` | `FileNotFoundError` |
+| `error.PermissionDenied` | `PermissionError` |
+| `error.AttributeNotFound` | `AttributeError` |
+| `error.NotImplemented` | `NotImplementedError` |
+| `error.ConnectionRefused` | `ConnectionRefusedError` |
+| `error.ConnectionReset` | `ConnectionResetError` |
+| `error.BrokenPipe` | `BrokenPipeError` |
+| `error.TimedOut`, `error.Timeout` | `TimeoutError` |
+| `error.NegativeValue`, `error.InvalidValue` | `ValueError` |
+
+This means simple cases just work:
+
+```zig
+fn get_item(index: i64) ![]const u8 {
+    if (index < 0) return error.IndexOutOfBounds;
+    if (index >= items.len) return error.IndexOutOfBounds;
+    return items[@intCast(index)];
+}
+```
+
+```python
+try:
+    get_item(-1)
+except IndexError as e:
+    print(e)  # IndexOutOfBounds
+```
+
+## Explicit Error Mapping
+
+For custom error names or custom messages, use explicit error mappings at the module level:
 
 ```zig
 .error_mappings = &.{
@@ -32,9 +93,15 @@ Map Zig errors to Python exception types at the module level:
 | `pyoz.mapError(name, exc)` | Map error to exception type, uses error name as message |
 | `pyoz.mapErrorMsg(name, exc, msg)` | Map error with custom message |
 
+Explicit mappings take precedence over automatic mapping. Use them when:
+
+- Your error name doesn't match a Python exception name (e.g., `error.InvalidInput`)
+- You want a custom message instead of the error name
+- You want to map to a different exception than the automatic mapping would choose
+
 ### Available Exception Types
 
-`.Exception`, `.ValueError`, `.TypeError`, `.RuntimeError`, `.IndexError`, `.KeyError`, `.AttributeError`, `.StopIteration`
+All `ExcBase` variants are available: `.Exception`, `.ValueError`, `.TypeError`, `.RuntimeError`, `.IndexError`, `.KeyError`, `.AttributeError`, `.StopIteration`, `.ZeroDivisionError`, `.OverflowError`, `.MemoryError`, `.FileNotFoundError`, `.PermissionError`, `.NotImplementedError`, `.TimeoutError`, `.ConnectionError`, `.OSError`, `.ImportError`, `.ArithmeticError`, `.LookupError`, `.EOFError`, `.SyntaxError`, `.UnicodeError`, and many more.
 
 ## Custom Exceptions
 
@@ -84,6 +151,30 @@ Raise Python exceptions directly using helper functions:
 | `pyoz.raiseException(type, msg)` | Custom type |
 
 Return `null` from a `?T` function after raising an exception to propagate it to Python.
+
+## Formatted Error Messages
+
+Use `pyoz.fmt()` to build dynamic error messages with Zig's `std.fmt` syntax:
+
+```zig
+fn set_port(self: *Server, port: u16) ?void {
+    if (port < 1024) return pyoz.raiseValueError(
+        pyoz.fmt("port {d} is reserved (must be >= 1024)", .{port}),
+    );
+    self.port = port;
+}
+```
+
+`pyoz.fmt()` is an inline function that formats into a 4096-byte stack buffer and returns a `[*:0]const u8`. Because it's inlined, the buffer lives in the caller's stack frame and is safe to pass to any function that copies the string immediately (like `PyErr_SetString`, which all raise functions use internally).
+
+It works with any raise function:
+
+```zig
+return pyoz.raiseTypeError(pyoz.fmt("expected {s}, got {s}", .{ expected, actual }));
+return pyoz.raiseIndexError(pyoz.fmt("index {d} out of range [0, {d})", .{ idx, len }));
+```
+
+`pyoz.fmt()` is also useful outside of error handling — anywhere you need a formatted `[*:0]const u8`.
 
 ## Catching Python Exceptions
 
@@ -183,12 +274,11 @@ const Ring = struct {
 };
 ```
 
-By default, errors become `RuntimeError`. Use [error mappings](#error-mapping) for specific exception types:
+Well-known error names are [automatically mapped](#automatic-error-mapping) to the correct Python exception (e.g., `error.MemoryError` becomes `MemoryError`). For custom error names, use [explicit error mappings](#explicit-error-mapping):
 
 ```zig
 .error_mappings = &.{
     pyoz.mapError("InvalidCapacity", .ValueError),
-    pyoz.mapError("MemoryError", .MemoryError),
     pyoz.mapError("EmptyRing", .RuntimeError),
 },
 ```

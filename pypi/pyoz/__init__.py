@@ -8,6 +8,8 @@ from _pyoz import (
     develop,
     init,
     publish,
+    run_bench,
+    run_tests,
     version,
 )
 
@@ -38,6 +40,8 @@ Commands:
   build         Build the extension module and create wheel
   develop       Build and install in development mode
   publish       Publish to PyPI
+  test          Run embedded tests
+  bench         Run embedded benchmarks
 
 Options:
   -h, --help     Show this help message
@@ -50,6 +54,7 @@ def _cmd_init(args):
     name = None
     in_current_dir = False
     local_pyoz_path = None
+    package_layout = False
 
     i = 0
     while i < len(args):
@@ -64,11 +69,14 @@ Arguments:
 
 Options:
   -p, --path          Initialize in current directory instead of creating new one
+  -k, --package       Create a Python package layout (recommended for larger projects)
   -l, --local <path>  Use local PyOZ path instead of fetching from URL
   -h, --help          Show this help message""")
             return
         elif arg in ("-p", "--path"):
             in_current_dir = True
+        elif arg in ("-k", "--package"):
+            package_layout = True
         elif arg in ("-l", "--local"):
             if i + 1 < len(args) and not args[i + 1].startswith("-"):
                 i += 1
@@ -81,7 +89,7 @@ Options:
         i += 1
 
     _check_zig()
-    init(name, in_current_dir, local_pyoz_path)
+    init(name, in_current_dir, local_pyoz_path, package_layout)
 
 
 def _cmd_build(args):
@@ -149,6 +157,46 @@ Options:
     publish(test_pypi)
 
 
+def _cmd_test(args):
+    release = False
+    verbose = False
+
+    for arg in args:
+        if arg in ("-h", "--help"):
+            print("""Usage: pyoz test [options]
+
+Run tests embedded in the module via pyoz.test() definitions.
+
+Options:
+  -r, --release  Build in release mode before testing
+  -v, --verbose  Verbose test output
+  -h, --help     Show this help message""")
+            return
+        elif arg in ("-r", "--release"):
+            release = True
+        elif arg in ("-v", "--verbose"):
+            verbose = True
+
+    _check_zig()
+    run_tests(release, verbose)
+
+
+def _cmd_bench(args):
+    for arg in args:
+        if arg in ("-h", "--help"):
+            print("""Usage: pyoz bench
+
+Run benchmarks embedded in the module via pyoz.bench() definitions.
+Always builds in release mode.
+
+Options:
+  -h, --help  Show this help message""")
+            return
+
+    _check_zig()
+    run_bench()
+
+
 def main():
     """Entry point for the pyoz CLI."""
     args = sys.argv[1:]
@@ -172,6 +220,10 @@ def main():
         _cmd_develop(cmd_args)
     elif cmd == "publish":
         _cmd_publish(cmd_args)
+    elif cmd == "test":
+        _cmd_test(cmd_args)
+    elif cmd == "bench":
+        _cmd_bench(cmd_args)
     else:
         print(f"Unknown command: {cmd}\n")
         _print_usage()
