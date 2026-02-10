@@ -234,6 +234,29 @@ pub fn developMode(allocator: std.mem.Allocator) !void {
         return err;
     };
 
+    // Detect package mode: module name starts with '_' and a py-package matches project name
+    const is_package_mode = blk: {
+        const mod_name = config.getModuleName();
+        if (mod_name.len > 0 and mod_name[0] == '_') {
+            for (config.py_packages.items) |pkg| {
+                if (std.mem.eql(u8, pkg, config.name)) break :blk true;
+            }
+        }
+        break :blk false;
+    };
+
+    // In package mode, symlink .so into the local package directory on disk
+    // so that when the package dir is symlinked to site-packages, it includes the .so
+    if (is_package_mode) {
+        const so_in_pkg = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ config.name, result.module_name });
+        defer allocator.free(so_in_pkg);
+        std.fs.cwd().deleteFile(so_in_pkg) catch {};
+        std.fs.cwd().symLink(abs_built_path, so_in_pkg, .{}) catch |err| {
+            std.debug.print("Warning: Could not symlink .so into package directory: {s}\n", .{@errorName(err)});
+        };
+        std.debug.print("  Symlinked extension into package: {s}\n", .{so_in_pkg});
+    }
+
     // First, check if we're in a virtual environment
     // This checks VIRTUAL_ENV env var OR if sys.prefix != sys.base_prefix
     const python_cmd = getPythonCommand();
@@ -255,48 +278,56 @@ pub fn developMode(allocator: std.mem.Allocator) !void {
         ,
     }) catch {
         // Fall back to local symlink
-        try createLocalSymlink(allocator, abs_built_path, result.module_name, config.name);
+        if (!is_package_mode)
+            try createLocalSymlink(allocator, abs_built_path, result.module_name, config.name);
         return;
     };
     defer allocator.free(venv_check);
     const venv_result = std.mem.trim(u8, venv_check, &std.ascii.whitespace);
 
     // If not in venv, try system site-packages but expect it might fail
+    var site_result_owned: ?[]const u8 = null;
+    defer if (site_result_owned) |sr| allocator.free(sr);
+
     const site_dir = if (std.mem.eql(u8, venv_result, "NO_VENV")) blk: {
-        const site_result = runCommand(allocator, &.{
+        site_result_owned = runCommand(allocator, &.{
             python_cmd, "-c", "import site; print(site.getsitepackages()[0])",
         }) catch {
-            try createLocalSymlink(allocator, abs_built_path, result.module_name, config.name);
+            if (!is_package_mode)
+                try createLocalSymlink(allocator, abs_built_path, result.module_name, config.name);
             return;
         };
-        defer allocator.free(site_result);
-        break :blk std.mem.trim(u8, site_result, &std.ascii.whitespace);
+        break :blk std.mem.trim(u8, site_result_owned.?, &std.ascii.whitespace);
     } else blk: {
         std.debug.print("  Virtual environment detected\n", .{});
         break :blk venv_result;
     };
 
-    const target_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ site_dir, result.module_name });
-    defer allocator.free(target_path);
+    // In flat mode, symlink .so directly to site-packages
+    // In package mode, skip this — the .so is inside the package directory
+    if (!is_package_mode) {
+        const target_path = try std.fmt.allocPrint(allocator, "{s}/{s}", .{ site_dir, result.module_name });
+        defer allocator.free(target_path);
 
-    // Try to create symlink in site-packages
-    if (builtin.os.tag == .windows) {
-        std.fs.copyFileAbsolute(abs_built_path, target_path, .{}) catch |err| {
-            std.debug.print("Warning: Could not copy to site-packages ({s})\n", .{@errorName(err)});
-            try createLocalSymlink(allocator, abs_built_path, result.module_name, config.name);
-            return;
-        };
-        std.debug.print("\nCopied to: {s}\n", .{target_path});
-    } else {
-        std.fs.deleteFileAbsolute(target_path) catch {};
-        std.posix.symlink(abs_built_path, target_path) catch |err| {
-            if (err == error.AccessDenied) {
-                std.debug.print("Warning: Permission denied for site-packages. Creating local symlink.\n", .{});
-            }
-            try createLocalSymlink(allocator, abs_built_path, result.module_name, config.name);
-            return;
-        };
-        std.debug.print("\nSymlinked to: {s}\n", .{target_path});
+        // Try to create symlink in site-packages
+        if (builtin.os.tag == .windows) {
+            std.fs.copyFileAbsolute(abs_built_path, target_path, .{}) catch |err| {
+                std.debug.print("Warning: Could not copy to site-packages ({s})\n", .{@errorName(err)});
+                try createLocalSymlink(allocator, abs_built_path, result.module_name, config.name);
+                return;
+            };
+            std.debug.print("\nCopied to: {s}\n", .{target_path});
+        } else {
+            std.fs.deleteFileAbsolute(target_path) catch {};
+            std.posix.symlink(abs_built_path, target_path) catch |err| {
+                if (err == error.AccessDenied) {
+                    std.debug.print("Warning: Permission denied for site-packages. Creating local symlink.\n", .{});
+                }
+                try createLocalSymlink(allocator, abs_built_path, result.module_name, config.name);
+                return;
+            };
+            std.debug.print("\nSymlinked to: {s}\n", .{target_path});
+        }
     }
 
     // Also symlink/copy Python packages

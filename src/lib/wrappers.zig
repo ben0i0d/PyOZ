@@ -93,9 +93,15 @@ pub fn wrapFunctionWithClasses(comptime zig_func: anytype, comptime class_infos:
             // (e.g., KeyboardInterrupt from checkSignals)
             if (py.PyErr_Occurred() != null) return;
             const msg = @errorName(err);
-            py.PyErr_SetString(py.PyExc_RuntimeError(), msg.ptr);
+            const exc_type = mapErrorToExc(err);
+            py.PyErr_SetString(exc_type, msg.ptr);
         }
     }.wrapper;
+}
+
+/// Map a Zig error to the appropriate Python exception type.
+fn mapErrorToExc(err: anyerror) *PyObject {
+    return errors_mod.mapWellKnownError(@errorName(err));
 }
 
 /// Generate a Python-callable wrapper for a Zig function (no class awareness)
@@ -226,7 +232,7 @@ pub fn wrapFunctionWithNamedKeywords(comptime zig_func: anytype, comptime class_
             // (e.g., KeyboardInterrupt from checkSignals)
             if (py.PyErr_Occurred() != null) return;
             const msg = @errorName(err);
-            py.PyErr_SetString(py.PyExc_RuntimeError(), msg.ptr);
+            py.PyErr_SetString(mapErrorToExc(err), msg.ptr);
         }
 
         fn setFieldError(comptime field_name: []const u8) void {
@@ -390,7 +396,7 @@ pub fn wrapFunctionWithKeywords(comptime zig_func: anytype, comptime class_infos
             // (e.g., KeyboardInterrupt from checkSignals)
             if (py.PyErr_Occurred() != null) return;
             const msg = @errorName(err);
-            py.PyErr_SetString(py.PyExc_RuntimeError(), msg.ptr);
+            py.PyErr_SetString(mapErrorToExc(err), msg.ptr);
         }
     }.wrapper;
 }

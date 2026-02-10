@@ -74,6 +74,7 @@ Struct fields with defaults become optional keyword arguments. Fields without de
 | `!T` | `T` or raises exception |
 | `struct { T, U }` | `tuple` |
 | `[]const T` | `list` |
+| `pyoz.Owned(T)` | Same as `T` (frees backing memory) |
 
 ## Error Handling
 
@@ -86,17 +87,16 @@ fn divide(a: f64, b: f64) !f64 {
 }
 ```
 
-By default, errors become `RuntimeError` with the error name as message. Use error mappings for specific exception types:
+PyOZ automatically maps well-known error names to the correct Python exception (e.g., `error.DivisionByZero` becomes `ZeroDivisionError`, `error.TypeError` becomes `TypeError`). Unrecognized errors fall back to `RuntimeError`. Use explicit error mappings for custom error names or messages:
 
 ```zig
 .error_mappings = &.{
-    pyoz.mapError("DivisionByZero", .ZeroDivisionError),
     pyoz.mapError("InvalidInput", .ValueError),
     pyoz.mapErrorMsg("TooBig", .ValueError, "Value exceeds limit"),
 },
 ```
 
-See [Error Handling](errors.md) for details.
+See [Error Handling](errors.md) for the full mapping table and details.
 
 ## GIL Release
 

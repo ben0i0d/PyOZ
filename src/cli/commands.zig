@@ -1,9 +1,11 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const version = @import("version");
 
 const project = @import("project.zig");
 const builder = @import("builder.zig");
 const wheel = @import("wheel.zig");
+const symreader = @import("symreader.zig");
 
 /// Initialize a new PyOZ project
 pub fn init(allocator: std.mem.Allocator, args: []const []const u8) !void {
@@ -11,6 +13,7 @@ pub fn init(allocator: std.mem.Allocator, args: []const []const u8) !void {
     var show_help = false;
     var in_current_dir = false;
     var local_pyoz_path: ?[]const u8 = null;
+    var package_layout = false;
 
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
@@ -19,6 +22,8 @@ pub fn init(allocator: std.mem.Allocator, args: []const []const u8) !void {
             show_help = true;
         } else if (std.mem.eql(u8, arg, "--path") or std.mem.eql(u8, arg, "-p")) {
             in_current_dir = true;
+        } else if (std.mem.eql(u8, arg, "--package") or std.mem.eql(u8, arg, "-k")) {
+            package_layout = true;
         } else if (std.mem.eql(u8, arg, "--local") or std.mem.eql(u8, arg, "-l")) {
             // Next arg must be the path
             if (i + 1 < args.len and !std.mem.startsWith(u8, args[i + 1], "-")) {
@@ -45,11 +50,13 @@ pub fn init(allocator: std.mem.Allocator, args: []const []const u8) !void {
             \\
             \\Options:
             \\  -p, --path          Initialize in current directory instead of creating new one
+            \\  -k, --package       Create a Python package layout (recommended for larger projects)
             \\  -l, --local <path>  Use local PyOZ path instead of fetching from URL
             \\  -h, --help          Show this help message
             \\
             \\Examples:
-            \\  pyoz init myproject                        # Create with URL dependency
+            \\  pyoz init myproject                        # Create with URL dependency (flat layout)
+            \\  pyoz init --package myproject              # Create with package directory layout
             \\  pyoz init --local /path/to/PyOZ myproject  # Use local PyOZ path
             \\  pyoz init --path                           # Initialize in current directory
             \\  pyoz init --path mymod                     # Initialize in current dir with name 'mymod'
@@ -58,7 +65,7 @@ pub fn init(allocator: std.mem.Allocator, args: []const []const u8) !void {
         return;
     }
 
-    try project.create(allocator, project_name, in_current_dir, local_pyoz_path);
+    try project.create(allocator, project_name, in_current_dir, local_pyoz_path, package_layout);
 }
 
 /// Build the extension module and create a wheel
@@ -167,4 +174,241 @@ pub fn publish(allocator: std.mem.Allocator, args: []const []const u8) !void {
     }
 
     try wheel.publish(allocator, test_pypi);
+}
+
+/// Run embedded tests
+pub fn runTests(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var release = false;
+    var show_help = false;
+    var verbose = false;
+
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            show_help = true;
+        } else if (std.mem.eql(u8, arg, "--release") or std.mem.eql(u8, arg, "-r")) {
+            release = true;
+        } else if (std.mem.eql(u8, arg, "--verbose") or std.mem.eql(u8, arg, "-v")) {
+            verbose = true;
+        }
+    }
+
+    if (show_help) {
+        std.debug.print(
+            \\Usage: pyoz test [options]
+            \\
+            \\Run tests embedded in the module via pyoz.test() definitions.
+            \\
+            \\Options:
+            \\  -r, --release  Build in release mode before testing
+            \\  -v, --verbose  Verbose test output
+            \\  -h, --help     Show this help message
+            \\
+        , .{});
+        return;
+    }
+
+    // Build the module
+    var build_result = try builder.buildModule(allocator, release);
+    defer build_result.deinit(allocator);
+
+    // Extract tests from the compiled module
+    const test_content = symreader.extractTests(allocator, build_result.module_path) catch |err| {
+        std.debug.print("Error: Could not extract tests: {}\n", .{err});
+        return err;
+    };
+
+    if (test_content == null or test_content.?.len == 0) {
+        std.debug.print("\nNo tests found in module.\n", .{});
+        std.debug.print("Add .tests to your pyoz.module() config:\n\n", .{});
+        std.debug.print("  .tests = &.{{\n", .{});
+        std.debug.print("      pyoz.@\"test\"(\"my test\",\n", .{});
+        std.debug.print("          \\\\assert mymod.add(2, 3) == 5\n", .{});
+        std.debug.print("      ),\n", .{});
+        std.debug.print("  }},\n", .{});
+        return;
+    }
+    defer allocator.free(test_content.?);
+
+    // Write test file next to the built module
+    const test_file = "zig-out/lib/__pyoz_test.py";
+    {
+        const cwd = std.fs.cwd();
+        const f = cwd.createFile(test_file, .{}) catch |err| {
+            std.debug.print("Error: Could not write test file: {s}\n", .{@errorName(err)});
+            return err;
+        };
+        defer f.close();
+        f.writeAll(test_content.?) catch |err| {
+            std.debug.print("Error: Could not write test file: {s}\n", .{@errorName(err)});
+            return err;
+        };
+    }
+
+    // Syntax-check the generated test file before running
+    const python_cmd = builder.getPythonCommand();
+    {
+        const syntax_argv = [_][]const u8{ python_cmd, "-m", "py_compile", test_file };
+        var syntax_check = std.process.Child.init(&syntax_argv, allocator);
+        syntax_check.stderr_behavior = .Inherit;
+        syntax_check.stdout_behavior = .Ignore;
+        const syntax_term = try syntax_check.spawnAndWait();
+        if (syntax_term.Exited != 0) {
+            std.debug.print("\nSyntax error in generated test file.\n", .{});
+            std.debug.print("Check the Python code in your pyoz.@\"test\"() definitions.\n", .{});
+            std.process.exit(1);
+        }
+    }
+
+    std.debug.print("\nRunning tests...\n\n", .{});
+    const path_sep = if (builtin.os.tag == .windows) ";" else ":";
+
+    // Build PYTHONPATH
+    const existing_pp = std.process.getEnvVarOwned(allocator, "PYTHONPATH") catch "";
+    defer if (existing_pp.len > 0) allocator.free(existing_pp);
+
+    const new_pp = if (existing_pp.len > 0)
+        try std.fmt.allocPrint(allocator, "zig-out/lib{s}{s}", .{ path_sep, existing_pp })
+    else
+        try allocator.dupe(u8, "zig-out/lib");
+    defer allocator.free(new_pp);
+
+    // Build argv
+    var argv_buf: [6][]const u8 = undefined;
+    var argc: usize = 0;
+    argv_buf[argc] = python_cmd;
+    argc += 1;
+    argv_buf[argc] = "-m";
+    argc += 1;
+    argv_buf[argc] = "unittest";
+    argc += 1;
+    argv_buf[argc] = test_file;
+    argc += 1;
+    if (verbose) {
+        argv_buf[argc] = "-v";
+        argc += 1;
+    }
+
+    var env_map = std.process.getEnvMap(allocator) catch |err| {
+        std.debug.print("Error: Could not get environment: {s}\n", .{@errorName(err)});
+        return err;
+    };
+    defer env_map.deinit();
+    try env_map.put("PYTHONPATH", new_pp);
+
+    var child = std.process.Child.init(argv_buf[0..argc], allocator);
+    child.env_map = &env_map;
+    child.stderr_behavior = .Inherit;
+    child.stdout_behavior = .Inherit;
+
+    const term = try child.spawnAndWait();
+    if (term.Exited != 0) {
+        std.process.exit(1);
+    }
+}
+
+/// Run embedded benchmarks
+pub fn runBench(allocator: std.mem.Allocator, args: []const []const u8) !void {
+    var show_help = false;
+
+    for (args) |arg| {
+        if (std.mem.eql(u8, arg, "--help") or std.mem.eql(u8, arg, "-h")) {
+            show_help = true;
+        }
+    }
+
+    if (show_help) {
+        std.debug.print(
+            \\Usage: pyoz bench [options]
+            \\
+            \\Run benchmarks embedded in the module via pyoz.bench() definitions.
+            \\Always builds in release mode.
+            \\
+            \\Options:
+            \\  -h, --help  Show this help message
+            \\
+        , .{});
+        return;
+    }
+
+    // Always build in release mode for benchmarks
+    var build_result = try builder.buildModule(allocator, true);
+    defer build_result.deinit(allocator);
+
+    // Extract benchmarks from the compiled module
+    const bench_content = symreader.extractBenchmarks(allocator, build_result.module_path) catch |err| {
+        std.debug.print("Error: Could not extract benchmarks: {}\n", .{err});
+        return err;
+    };
+
+    if (bench_content == null or bench_content.?.len == 0) {
+        std.debug.print("\nNo benchmarks found in module.\n", .{});
+        std.debug.print("Add .benchmarks to your pyoz.module() config:\n\n", .{});
+        std.debug.print("  .benchmarks = &.{{\n", .{});
+        std.debug.print("      pyoz.bench(\"my benchmark\",\n", .{});
+        std.debug.print("          \\\\mymod.add(100, 200)\n", .{});
+        std.debug.print("      ),\n", .{});
+        std.debug.print("  }},\n", .{});
+        return;
+    }
+    defer allocator.free(bench_content.?);
+
+    // Write benchmark file next to the built module
+    const bench_file = "zig-out/lib/__pyoz_bench.py";
+    {
+        const cwd = std.fs.cwd();
+        const f = cwd.createFile(bench_file, .{}) catch |err| {
+            std.debug.print("Error: Could not write benchmark file: {s}\n", .{@errorName(err)});
+            return err;
+        };
+        defer f.close();
+        f.writeAll(bench_content.?) catch |err| {
+            std.debug.print("Error: Could not write benchmark file: {s}\n", .{@errorName(err)});
+            return err;
+        };
+    }
+
+    // Syntax-check the generated benchmark file before running
+    const python_cmd = builder.getPythonCommand();
+    {
+        const syntax_argv = [_][]const u8{ python_cmd, "-m", "py_compile", bench_file };
+        var syntax_check = std.process.Child.init(&syntax_argv, allocator);
+        syntax_check.stderr_behavior = .Inherit;
+        syntax_check.stdout_behavior = .Ignore;
+        const syntax_term = try syntax_check.spawnAndWait();
+        if (syntax_term.Exited != 0) {
+            std.debug.print("\nSyntax error in generated benchmark file.\n", .{});
+            std.debug.print("Check the Python code in your pyoz.bench() definitions.\n", .{});
+            std.process.exit(1);
+        }
+    }
+
+    std.debug.print("\nRunning benchmarks...\n", .{});
+    const path_sep = if (builtin.os.tag == .windows) ";" else ":";
+
+    const existing_pp = std.process.getEnvVarOwned(allocator, "PYTHONPATH") catch "";
+    defer if (existing_pp.len > 0) allocator.free(existing_pp);
+
+    const new_pp = if (existing_pp.len > 0)
+        try std.fmt.allocPrint(allocator, "zig-out/lib{s}{s}", .{ path_sep, existing_pp })
+    else
+        try allocator.dupe(u8, "zig-out/lib");
+    defer allocator.free(new_pp);
+
+    var env_map = std.process.getEnvMap(allocator) catch |err| {
+        std.debug.print("Error: Could not get environment: {s}\n", .{@errorName(err)});
+        return err;
+    };
+    defer env_map.deinit();
+    try env_map.put("PYTHONPATH", new_pp);
+
+    const argv = [_][]const u8{ python_cmd, bench_file };
+    var child = std.process.Child.init(&argv, allocator);
+    child.env_map = &env_map;
+    child.stderr_behavior = .Inherit;
+    child.stdout_behavior = .Inherit;
+
+    const term = try child.spawnAndWait();
+    if (term.Exited != 0) {
+        std.process.exit(1);
+    }
 }

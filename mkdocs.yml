@@ -86,10 +86,12 @@ nav:
           - GIL Management: guide/gil.md
           - Submodules: guide/submodules.md
           - Type Stubs: guide/stubs.md
+          - Testing & Benchmarks: guide/testing.md
           - ABI3 (Stable ABI): guide/abi3.md
     - CLI:
           - pyoz init: cli/init.md
           - pyoz build: cli/build.md
+          - pyoz test: cli/test.md
           - Configuration: cli/configuration.md
     - Examples:
           - Complete Module: examples/complete-module.md

@@ -125,6 +125,9 @@ PyOZ provides several commands to streamline your workflow:
 | `pyoz build` | Build a debug wheel |
 | `pyoz build --release` | Build an optimized release wheel |
 | `pyoz develop` | Build and install in development mode (symlinked) |
+| `pyoz test` | Run embedded inline tests |
+| `pyoz test -v` | Run tests with verbose output |
+| `pyoz bench` | Run embedded benchmarks (release mode) |
 | `pyoz publish` | Publish wheel(s) to PyPI |
 
 For detailed CLI options, see the [CLI Reference](cli/build.md).
@@ -208,21 +211,21 @@ const MyModule = pyoz.module(.{
     .funcs = &.{
         pyoz.func("divide", divide, "Divide two numbers"),
     },
-    // Map Zig errors to Python exceptions
-    .error_mappings = &.{
-        pyoz.mapError("DivisionByZero", .RuntimeError),
-    },
 });
 ```
+
+PyOZ automatically maps well-known Zig error names to the correct Python exception. `error.DivisionByZero` becomes `ZeroDivisionError`:
 
 ```python
 import mymodule
 
 try:
     mymodule.divide(10, 0)
-except RuntimeError as e:
+except ZeroDivisionError as e:
     print(f"Error: {e}")  # Error: DivisionByZero
 ```
+
+For custom error names, use explicit [error mappings](guide/errors.md#explicit-error-mapping).
 
 ## Module Constants
 
@@ -299,4 +302,5 @@ print(mymodule.Status.pending.value)  # "pending"
 - [Properties Guide](guide/properties.md) - Computed properties, getters/setters
 - [Type Mappings](guide/types.md) - Complete type conversion reference
 - [Error Handling](guide/errors.md) - Custom exceptions, error mapping
+- [Testing & Benchmarks](guide/testing.md) - Inline tests and performance benchmarks
 - [CLI Reference](cli/build.md) - Detailed CLI options

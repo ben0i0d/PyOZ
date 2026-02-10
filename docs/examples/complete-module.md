@@ -159,6 +159,46 @@ const MyModule = pyoz.module(.{
     .error_mappings = &.{
         pyoz.mapError("DivisionByZero", .ValueError),
     },
+    .tests = &.{
+        pyoz.@"test"("add works",
+            \\assert mymodule.add(2, 3) == 5
+            \\assert mymodule.add(-1, 1) == 0
+        ),
+        pyoz.@"test"("divide works",
+            \\assert mymodule.divide(10, 2) == 5.0
+        ),
+        pyoz.testRaises("divide by zero raises ValueError", "ValueError",
+            \\mymodule.divide(1, 0)
+        ),
+        pyoz.@"test"("Point operations",
+            \\p = mymodule.Point(3.0, 4.0)
+            \\assert abs(p.magnitude() - 5.0) < 1e-10
+            \\p2 = mymodule.Point(1.0, 1.0)
+            \\p3 = p + p2
+            \\assert p3.x == 4.0 and p3.y == 5.0
+        ),
+        pyoz.@"test"("Counter tracks state",
+            \\c = mymodule.Counter(0)
+            \\c.increment()
+            \\c.increment()
+            \\assert c.get() == 2
+        ),
+        pyoz.@"test"("enums have correct values",
+            \\assert mymodule.Priority.High.value == 3
+            \\assert mymodule.Status.active.value == "active"
+        ),
+    },
+    .benchmarks = &.{
+        pyoz.bench("add",
+            \\mymodule.add(100, 200)
+        ),
+        pyoz.bench("Point creation",
+            \\mymodule.Point(3.0, 4.0)
+        ),
+        pyoz.bench("Point.magnitude",
+            \\mymodule.Point(3.0, 4.0).magnitude()
+        ),
+    },
 });
 
 pub export fn PyInit_mymodule() ?*pyoz.PyObject {
@@ -249,8 +289,17 @@ pyoz init mymodule
 # Build for development
 pyoz develop
 
-# Test
+# Quick smoke test
 python -c "import mymodule; print(mymodule.add(1, 2))"
+
+# Run embedded tests
+pyoz test
+
+# Run with verbose output
+pyoz test -v
+
+# Run benchmarks (builds in release mode)
+pyoz bench
 
 # Build release wheel
 pyoz build --release

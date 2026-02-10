@@ -3,7 +3,7 @@ const version = @import("version");
 pub const toml = @import("toml.zig");
 
 /// Create a new PyOZ project
-pub fn create(allocator: std.mem.Allocator, name_opt: ?[]const u8, in_current_dir: bool, local_pyoz_path: ?[]const u8) !void {
+pub fn create(allocator: std.mem.Allocator, name_opt: ?[]const u8, in_current_dir: bool, local_pyoz_path: ?[]const u8, package_layout: bool) !void {
     var project_dir: std.fs.Dir = undefined;
     var created_dir = false;
     var name: []const u8 = undefined;
@@ -56,13 +56,35 @@ pub fn create(allocator: std.mem.Allocator, name_opt: ?[]const u8, in_current_di
     try project_dir.makeDir("src");
 
     // Create pyproject.toml
-    try writeTemplate(allocator, project_dir, "pyproject.toml", pyproject_template, name);
+    if (package_layout) {
+        try writeTemplate(allocator, project_dir, "pyproject.toml", pyproject_package_template, name);
+    } else {
+        try writeTemplate(allocator, project_dir, "pyproject.toml", pyproject_template, name);
+    }
 
     // Create src/lib.zig
-    try writeTemplate(allocator, project_dir, "src/lib.zig", lib_zig_template, name);
+    if (package_layout) {
+        try writeTemplate(allocator, project_dir, "src/lib.zig", lib_zig_package_template, name);
+    } else {
+        try writeTemplate(allocator, project_dir, "src/lib.zig", lib_zig_template, name);
+    }
 
     // Create build.zig (for users who want to use zig build directly)
-    try writeTemplate(allocator, project_dir, "build.zig", build_zig_template, name);
+    if (package_layout) {
+        try writeTemplate(allocator, project_dir, "build.zig", build_zig_package_template, name);
+    } else {
+        try writeTemplate(allocator, project_dir, "build.zig", build_zig_template, name);
+    }
+
+    // Create Python package directory with __init__.py (package layout only)
+    if (package_layout) {
+        try project_dir.makeDir(name);
+        const init_py_content = try replaceInTemplate(allocator, init_py_template, name);
+        defer allocator.free(init_py_content);
+        const init_py_path = try std.fmt.allocPrint(allocator, "{s}/__init__.py", .{name});
+        defer allocator.free(init_py_path);
+        try project_dir.writeFile(.{ .sub_path = init_py_path, .data = init_py_content });
+    }
 
     // Create build.zig.zon for dependency management
     if (local_pyoz_path) |local_path| {
@@ -81,23 +103,45 @@ pub fn create(allocator: std.mem.Allocator, name_opt: ?[]const u8, in_current_di
     // Create README.md
     try writeTemplate(allocator, project_dir, "README.md", readme_template, name);
 
-    std.debug.print(
-        \\
-        \\Project '{s}' created successfully!
-        \\
-        \\Project structure:
-        \\  {s}/
-        \\  ├── pyproject.toml    # Project configuration
-        \\  ├── build.zig         # Zig build script
-        \\  ├── build.zig.zon     # Zig dependencies
-        \\  ├── README.md
-        \\  ├── .gitignore
-        \\  └── src/
-        \\      └── lib.zig       # Your module code
-        \\
-        \\Next steps:
-        \\
-    , .{ name, name });
+    if (package_layout) {
+        std.debug.print(
+            \\
+            \\Project '{s}' created successfully! (package layout)
+            \\
+            \\Project structure:
+            \\  {s}/
+            \\  ├── pyproject.toml    # Project configuration
+            \\  ├── build.zig         # Zig build script
+            \\  ├── build.zig.zon     # Zig dependencies
+            \\  ├── README.md
+            \\  ├── .gitignore
+            \\  ├── src/
+            \\  │   └── lib.zig       # Your Zig extension code
+            \\  └── {s}/
+            \\      └── __init__.py   # Python package entry point
+            \\
+            \\Next steps:
+            \\
+        , .{ name, name, name });
+    } else {
+        std.debug.print(
+            \\
+            \\Project '{s}' created successfully!
+            \\
+            \\Project structure:
+            \\  {s}/
+            \\  ├── pyproject.toml    # Project configuration
+            \\  ├── build.zig         # Zig build script
+            \\  ├── build.zig.zon     # Zig dependencies
+            \\  ├── README.md
+            \\  ├── .gitignore
+            \\  └── src/
+            \\      └── lib.zig       # Your module code
+            \\
+            \\Next steps:
+            \\
+        , .{ name, name });
+    }
 
     if (!in_current_dir) {
         std.debug.print("  cd {s}\n", .{name});
@@ -401,6 +445,44 @@ const pyproject_template =
     \\
 ;
 
+const pyproject_package_template =
+    \\[build-system]
+    \\requires = ["pyoz"]
+    \\build-backend = "pyoz.backend"
+    \\
+    \\[project]
+    \\name = "{[name]s}"
+    \\version = "0.1.0"
+    \\description = "A Python extension module built with PyOZ"
+    \\requires-python = ">=3.8"
+    \\readme = "README.md"
+    \\
+    \\[tool.pyoz]
+    \\# Path to your Zig source file
+    \\module-path = "src/lib.zig"
+    \\
+    \\# Native module name (underscore prefix for package layout)
+    \\module-name = "_{[name]s}"
+    \\
+    \\# Python package directory to include in the wheel
+    \\py-packages = ["{[name]s}"]
+    \\
+    \\# Optimization level for release builds: "Debug", "ReleaseSafe", "ReleaseFast", "ReleaseSmall"
+    \\# optimize = "ReleaseFast"
+    \\
+    \\# Strip debug symbols in release builds
+    \\# strip = true
+    \\
+    \\# File extensions to include from py-packages (default: .py only)
+    \\# Use ["*"] to include all files
+    \\# include-ext = ["py", "zig", "json"]
+    \\
+    \\# Linux platform tag for wheel builds (default: "linux_x86_64" or "linux_aarch64")
+    \\# Use manylinux tags only if building in a manylinux container
+    \\# linux-platform-tag = "manylinux_2_17_x86_64"
+    \\
+;
+
 const lib_zig_template =
     \\const pyoz = @import("PyOZ");
     \\
@@ -498,6 +580,114 @@ const build_zig_template =
     \\    });
     \\    b.getInstallStep().dependOn(&install.step);
     \\
+    \\}
+    \\
+;
+
+const build_zig_package_template =
+    \\//! Build script for {[name]s}
+    \\//!
+    \\//! You can use this directly with `zig build`, or use `pyoz build` for
+    \\//! automatic Python configuration detection.
+    \\
+    \\const std = @import("std");
+    \\const builtin = @import("builtin");
+    \\
+    \\pub fn build(b: *std.Build) void {
+    \\    const target = b.standardTargetOptions(.{});
+    \\    const optimize = b.standardOptimizeOption(.{});
+    \\
+    \\    // Strip option (can be set via -Dstrip=true or from pyoz CLI)
+    \\    const strip = b.option(bool, "strip", "Strip debug symbols from the binary") orelse false;
+    \\
+    \\    // Get PyOZ dependency
+    \\    const pyoz_dep = b.dependency("PyOZ", .{
+    \\        .target = target,
+    \\        .optimize = optimize,
+    \\    });
+    \\
+    \\    // Create the user's lib module (shared between library and stub generator)
+    \\    const user_lib_mod = b.createModule(.{
+    \\        .root_source_file = b.path("src/lib.zig"),
+    \\        .target = target,
+    \\        .optimize = optimize,
+    \\        .strip = strip,
+    \\        .imports = &.{
+    \\            .{ .name = "PyOZ", .module = pyoz_dep.module("PyOZ") },
+    \\        },
+    \\    });
+    \\
+    \\    // Build the Python extension as a dynamic library
+    \\    // Note: underscore prefix separates the .so from the Python package directory
+    \\    const lib = b.addLibrary(.{
+    \\        .name = "_{[name]s}",
+    \\        .linkage = .dynamic,
+    \\        .root_module = user_lib_mod,
+    \\    });
+    \\
+    \\    // Link libc (required for Python C API)
+    \\    lib.linkLibC();
+    \\
+    \\    // Determine extension based on target OS (.pyd for Windows, .so otherwise)
+    \\    const ext = if (builtin.os.tag == .windows) ".pyd" else ".so";
+    \\
+    \\    // Install the shared library
+    \\    const install = b.addInstallArtifact(lib, .{
+    \\        .dest_sub_path = "_{[name]s}" ++ ext,
+    \\    });
+    \\    b.getInstallStep().dependOn(&install.step);
+    \\
+    \\}
+    \\
+;
+
+const init_py_template =
+    \\# Auto-generated by PyOZ - re-exports all symbols from the native extension
+    \\from ._{[name]s} import *
+    \\
+;
+
+const lib_zig_package_template =
+    \\const pyoz = @import("PyOZ");
+    \\
+    \\// ============================================================================
+    \\// Define your functions here
+    \\// ============================================================================
+    \\
+    \\/// Add two integers
+    \\fn add(a: i64, b: i64) i64 {
+    \\    return a + b;
+    \\}
+    \\
+    \\/// Multiply two floats
+    \\fn multiply(a: f64, b: f64) f64 {
+    \\    return a * b;
+    \\}
+    \\
+    \\/// Greet someone by name
+    \\fn greet(name: []const u8) ![]const u8 {
+    \\    _ = name;
+    \\    return "Hello from {[name]s}!";
+    \\}
+    \\
+    \\// ============================================================================
+    \\// Module definition
+    \\// ============================================================================
+    \\
+    \\pub const Module = pyoz.module(.{
+    \\    .name = "_{[name]s}",
+    \\    .doc = "{[name]s} - A Python extension module built with PyOZ",
+    \\    .funcs = &.{
+    \\        pyoz.func("add", add, "Add two integers"),
+    \\        pyoz.func("multiply", multiply, "Multiply two floats"),
+    \\        pyoz.func("greet", greet, "Return a greeting"),
+    \\    },
+    \\    .classes = &.{},
+    \\});
+    \\
+    \\// Module initialization function (underscore prefix for package layout)
+    \\pub export fn PyInit__{[name]s}() ?*pyoz.PyObject {
+    \\    return Module.init();
     \\}
     \\
 ;

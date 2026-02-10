@@ -3487,6 +3487,84 @@ test "Ref - property exclusion: public Ref field does not appear as Python attri
 }
 
 // ============================================================================
+// pyoz.fmt() - formatted string helper
+// ============================================================================
+
+test "fmt - formatted raise with dynamic values" {
+    const python = try initTestPython();
+
+    // Valid call - returns the value
+    try std.testing.expectEqual(@as(i64, 5), try python.eval(i64, "example.test_fmt_raise(5, 10)"));
+}
+
+test "fmt - formatted raise produces correct error message" {
+    const python = try initTestPython();
+
+    try python.exec(
+        \\try:
+        \\    example.test_fmt_raise(100, 50)
+        \\    _fmt_result = ""
+        \\except ValueError as e:
+        \\    _fmt_result = str(e)
+    );
+    try std.testing.expect(try python.eval(bool, "_fmt_result == 'value 100 exceeds limit 50'"));
+}
+
+// ============================================================================
+// CLASS: ValidatedProp (computed property with ?void / ?T returns)
+// ============================================================================
+
+test "ValidatedProp - computed property getter returns value" {
+    const python = try initTestPython();
+
+    try python.exec("vp = example.ValidatedProp()");
+    // Default value is 0, but setter rejects 0 — getter should return 0 fine
+    try std.testing.expectEqual(@as(i64, 0), try python.eval(i64, "vp.value"));
+}
+
+test "ValidatedProp - computed property setter accepts valid value" {
+    const python = try initTestPython();
+
+    try python.exec("vp = example.ValidatedProp()");
+    try python.exec("vp.value = 42");
+    try std.testing.expectEqual(@as(i64, 42), try python.eval(i64, "vp.value"));
+}
+
+test "ValidatedProp - computed property setter rejects invalid value" {
+    const python = try initTestPython();
+
+    try python.exec("vp = example.ValidatedProp()");
+    try python.exec("vp.value = 10");
+    // Setting to 0 should raise ValueError
+    try python.exec(
+        \\try:
+        \\    vp.value = 0
+        \\    _result = False
+        \\except ValueError:
+        \\    _result = True
+    );
+    try std.testing.expect(try python.eval(bool, "_result"));
+    // Value should be unchanged
+    try std.testing.expectEqual(@as(i64, 10), try python.eval(i64, "vp.value"));
+}
+
+test "ValidatedProp - computed property getter raises on error state" {
+    const python = try initTestPython();
+
+    try python.exec("vp = example.ValidatedProp()");
+    try python.exec("vp.value = 999");
+    // Getting value when _value == 999 should raise RuntimeError
+    try python.exec(
+        \\try:
+        \\    _ = vp.value
+        \\    _result = False
+        \\except RuntimeError:
+        \\    _result = True
+    );
+    try std.testing.expect(try python.eval(bool, "_result"));
+}
+
+// ============================================================================
 // Symreader Tests
 // ============================================================================
 
