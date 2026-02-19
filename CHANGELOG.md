@@ -5,6 +5,14 @@ All notable changes to PyOZ will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.4] - 2026-02-19
+
+### Added
+- **`pyoz.Signature(T, "python_type")` -- stub return type override** - New comptime wrapper type that overrides the Python type annotation in generated `.pyi` stubs without affecting runtime behavior. Use this when the Zig return type doesn't map cleanly to the desired Python type, most commonly when `?T` is used for CPython exception signaling (returning `null` + `PyErr_SetString`) rather than representing Python `None`. For example, `fn probe() pyoz.Signature(?Dict, "dict[str, bool]")` generates `def probe() -> dict[str, bool]` instead of the incorrect `def probe() -> dict[str, bool] | None`. Also supports `pyoz.Signature(?void, "Never")` for functions that only raise. Works uniformly on module-level functions, class instance/static/class methods, `__call__`, `__new__`, and `allowThreads`/`allowThreadsTry`.
+
+### Removed
+- **`method__returns__` class method stub override** - The `pub const method_name__returns__: []const u8 = "..."` convention for overriding class method return type stubs has been removed in favor of the unified `pyoz.Signature(T, "python_type")` approach, which works identically for both module-level functions and class methods.
+
 ## [0.11.3] - 2026-02-10
 
 ### Fixed
