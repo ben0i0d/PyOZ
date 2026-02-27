@@ -25,7 +25,7 @@ fn detectPython(b: *std.Build) ?PythonConfig {
     const version_result = b.runAllowFail(
         &.{ python_cmd, "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" },
         &out_code,
-        .Inherit,
+        .inherit,
     ) catch return null;
     if (out_code != 0) return null;
     const version = std.mem.trim(u8, version_result, &std.ascii.whitespace);
@@ -42,7 +42,7 @@ fn detectPython(b: *std.Build) ?PythonConfig {
     const include_result = b.runAllowFail(
         &.{ python_cmd, "-c", "import sysconfig; print(sysconfig.get_path('include'))" },
         &out_code,
-        .Inherit,
+        .inherit,
     ) catch return null;
     if (out_code != 0) return null;
 
@@ -55,7 +55,7 @@ fn detectPython(b: *std.Build) ?PythonConfig {
         python_cmd,
         "-c",
         "import sysconfig,sys,os;d=sysconfig.get_config_var('LIBDIR');print(d if d else os.path.join(sys.prefix,'libs' if sys.platform=='win32' else 'lib'))",
-    }, &out_code, .Inherit)) |libdir_result| {
+    }, &out_code, .inherit)) |libdir_result| {
         if (out_code == 0) {
             const libdir_trimmed = std.mem.trim(u8, libdir_result, &std.ascii.whitespace);
             if (libdir_trimmed.len > 0) {
@@ -164,14 +164,13 @@ pub fn build(b: *std.Build) void {
 
     // Link against Python
     if (python_config) |python| {
-        example_lib.addIncludePath(.{ .cwd_relative = python.include_dir });
         example_lib.root_module.addIncludePath(.{ .cwd_relative = python.include_dir });
         if (python.lib_dir) |lib_dir| {
-            example_lib.addLibraryPath(.{ .cwd_relative = lib_dir });
+            example_lib.root_module.addLibraryPath(.{ .cwd_relative = lib_dir });
         }
-        example_lib.linkSystemLibrary(python.lib_name);
+        example_lib.root_module.linkSystemLibrary(python.lib_name, .{});
     }
-    example_lib.linkLibC();
+    //example_lib.linkLibC();
 
     // Install as .so file (Unix) or .pyd file (Windows)
     const ext = if (builtin.os.tag == .windows) ".pyd" else ".so";
@@ -206,14 +205,14 @@ pub fn build(b: *std.Build) void {
 
     // Link against Python
     if (python_config) |python| {
-        example_abi3_lib.addIncludePath(.{ .cwd_relative = python.include_dir });
+        example_abi3_lib.root_module.addIncludePath(.{ .cwd_relative = python.include_dir });
         example_abi3_lib.root_module.addIncludePath(.{ .cwd_relative = python.include_dir });
         if (python.lib_dir) |lib_dir| {
-            example_abi3_lib.addLibraryPath(.{ .cwd_relative = lib_dir });
+            example_abi3_lib.root_module.addLibraryPath(.{ .cwd_relative = lib_dir });
         }
-        example_abi3_lib.linkSystemLibrary(python.lib_name);
+        example_abi3_lib.root_module.linkSystemLibrary(python.lib_name, .{});
     }
-    example_abi3_lib.linkLibC();
+    //example_abi3_lib.linkLibC();
 
     // Install as .so file (Unix) or .pyd file (Windows)
     const install_example_abi3 = b.addInstallArtifact(example_abi3_lib, .{
@@ -348,14 +347,14 @@ pub fn build(b: *std.Build) void {
 
     // Link against Python for embedding
     if (python_config) |python| {
-        tests.addIncludePath(.{ .cwd_relative = python.include_dir });
+        tests.root_module.addIncludePath(.{ .cwd_relative = python.include_dir });
         tests.root_module.addIncludePath(.{ .cwd_relative = python.include_dir });
         if (python.lib_dir) |lib_dir| {
-            tests.addLibraryPath(.{ .cwd_relative = lib_dir });
+            tests.root_module.addLibraryPath(.{ .cwd_relative = lib_dir });
         }
-        tests.linkSystemLibrary(python.lib_name);
+        tests.root_module.linkSystemLibrary(python.lib_name, .{});
     }
-    tests.linkLibC();
+    //tests.linkLibC();
 
     const run_tests = b.addRunArtifact(tests);
     // Tests depend on the example module and test stub libs being built first
@@ -391,14 +390,14 @@ pub fn build(b: *std.Build) void {
 
     // Link against Python for embedding
     if (python_config) |python| {
-        tests_abi3.addIncludePath(.{ .cwd_relative = python.include_dir });
+        tests_abi3.root_module.addIncludePath(.{ .cwd_relative = python.include_dir });
         tests_abi3.root_module.addIncludePath(.{ .cwd_relative = python.include_dir });
         if (python.lib_dir) |lib_dir| {
-            tests_abi3.addLibraryPath(.{ .cwd_relative = lib_dir });
+            tests_abi3.root_module.addLibraryPath(.{ .cwd_relative = lib_dir });
         }
-        tests_abi3.linkSystemLibrary(python.lib_name);
+        tests_abi3.root_module.linkSystemLibrary(python.lib_name, .{});
     }
-    tests_abi3.linkLibC();
+    //tests_abi3.linkLibC();
 
     const run_tests_abi3 = b.addRunArtifact(tests_abi3);
     // ABI3 tests depend on the ABI3 example module being built first
@@ -424,12 +423,12 @@ pub fn build(b: *std.Build) void {
     });
 
     // Add miniz C source (amalgamated single-file version)
-    cli_exe.addCSourceFile(.{
+    cli_exe.root_module.addCSourceFile(.{
         .file = b.path("src/miniz/miniz.c"),
         .flags = &.{"-DMINIZ_NO_STDIO"},
     });
-    cli_exe.addIncludePath(b.path("src/miniz"));
-    cli_exe.linkLibC();
+    cli_exe.root_module.addIncludePath(b.path("src/miniz"));
+    //cli_exe.linkLibC();
 
     const install_cli = b.addInstallArtifact(cli_exe, .{});
 
@@ -487,14 +486,14 @@ pub fn build(b: *std.Build) void {
         });
 
         // Add miniz C source for compression support
-        release_exe.addCSourceFile(.{
+        release_exe.root_module.addCSourceFile(.{
             .file = b.path("src/miniz/miniz.c"),
             .flags = &.{"-DMINIZ_NO_STDIO"},
         });
-        release_exe.addIncludePath(b.path("src/miniz"));
+        release_exe.root_module.addIncludePath(b.path("src/miniz"));
 
         // Statically link libc for fully static binaries
-        release_exe.linkLibC();
+        //release_exe.linkLibC();
 
         const target_name = b.fmt("pyoz-{s}-{s}{s}", .{
             @tagName(t.cpu_arch.?),
